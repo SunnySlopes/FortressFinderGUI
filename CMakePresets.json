@@ -1,0 +1,44 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 15,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "mingw-release",
+      "displayName": "MinGW Release",
+      "description": "Requires MinGW-w64 gcc/g++ in PATH (e.g. MSYS2 mingw64)",
+      "generator": "MinGW Makefiles",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "ninja-mingw-release",
+      "displayName": "Ninja + MinGW Release",
+      "description": "Requires ninja, gcc, g++ in PATH",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "mingw-release",
+      "configurePreset": "mingw-release",
+      "targets": ["fortressFinderLibJ"]
+    },
+    {
+      "name": "ninja-mingw-release",
+      "configurePreset": "ninja-mingw-release",
+      "targets": ["fortressFinderLibJ"]
+    }
+  ]
+}
