@@ -44,3 +44,4 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+/src/main/java/sunnyslopes/fortressfinder/FortressFinderBridge.class

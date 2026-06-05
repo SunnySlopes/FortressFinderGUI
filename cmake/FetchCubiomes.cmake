@@ -10,6 +10,20 @@ function(fortress_finder_patch_cubiomes_rng _src_dir)
         message(FATAL_ERROR "cubiomes rng.h not found: ${_rng}")
     endif()
     file(READ "${_rng}" CUBIOMES_RNG_H)
+
+    # Idempotent: keep only the original header (drop macro tail from prior configures).
+    set(_guard "#endif /* RNG_H_ */")
+    string(FIND "${CUBIOMES_RNG_H}" "${_guard}" _guard_pos)
+    if(_guard_pos GREATER -1)
+        string(LENGTH "${_guard}" _guard_len)
+        math(EXPR _keep_end "${_guard_pos} + ${_guard_len}")
+        string(SUBSTRING "${CUBIOMES_RNG_H}" 0 ${_keep_end} CUBIOMES_RNG_H)
+        string(APPEND CUBIOMES_RNG_H "\n")
+    endif()
+
+    # Undo any depth of prior renames inside the header body only.
+    string(REGEX REPLACE "cubiomes_rng(_cubiomes_rng)*_lerp" "lerp" CUBIOMES_RNG_H "${CUBIOMES_RNG_H}")
+
     string(REPLACE "lerp2" "@@LERP2@@" CUBIOMES_RNG_H "${CUBIOMES_RNG_H}")
     string(REPLACE "lerp3" "@@LERP3@@" CUBIOMES_RNG_H "${CUBIOMES_RNG_H}")
     string(REPLACE "lerp(" "cubiomes_rng_lerp(" CUBIOMES_RNG_H "${CUBIOMES_RNG_H}")

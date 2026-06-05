@@ -10,7 +10,6 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
-import java.lang.reflect.InvocationTargetException;
 import java.util.function.Consumer;
 import java.util.Locale;
 import java.util.ResourceBundle;
@@ -25,10 +24,18 @@ public class FortressFinderFrame extends JFrame {
     private static final int DEFAULT_MIN_Z = -16384;
     private static final int DEFAULT_MAX_Z = 16383;
     // 默认值 - 世界边界（块坐标）
-    private static final int BOUNDARY_MIN_X = -30000000;
-    private static final int BOUNDARY_MAX_X = 30000000;
-    private static final int BOUNDARY_MIN_Z = -30000000;
-    private static final int BOUNDARY_MAX_Z = 30000000;
+    private static final int BOUNDARY_MIN_X = -3750000;
+    private static final int BOUNDARY_MAX_X = 3750000;
+    private static final int BOUNDARY_MIN_Z = -3750000;
+    private static final int BOUNDARY_MAX_Z = 3750000;
+    private static final int EX_BOUNDARY_MIN_X = -4000000;
+    private static final int EX_BOUNDARY_MAX_X = 4000000;
+    private static final int EX_BOUNDARY_MIN_Z = -4000000;
+    private static final int EX_BOUNDARY_MAX_Z = 4000000;
+    private static final int REAL_BOUNDARY_MIN_X = -30000000;
+    private static final int REAL_BOUNDARY_MAX_X = 30000000;
+    private static final int REAL_BOUNDARY_MIN_Z = -30000000;
+    private static final int REAL_BOUNDARY_MAX_Z = 30000000;
     // 默认值 - 从种子列表搜索（块坐标）
     private static final int DEFAULT_LIST_MIN_X = -1024;
     private static final int DEFAULT_LIST_MAX_X = 1023;
@@ -37,7 +44,7 @@ public class FortressFinderFrame extends JFrame {
 
     private static final int DEFAULT_SPAN_EDGE = 225;
     private static final int SPAN_EDGE_MIN = 0;
-    private static final int SPAN_EDGE_MAX = 250;
+    private static final int SPAN_EDGE_MAX = 260;
     private static final int DEFAULT_MC_INDEX = 3;
 
     // 单种子搜索相关组件
@@ -69,6 +76,7 @@ public class FortressFinderFrame extends JFrame {
     private JButton searchPauseButton;
     private JButton searchStopButton;
     private JButton searchResetButton;
+    private BoundaryButtonRefs searchBoundaryButtons;
     private JButton searchExportButton;
     private JButton searchSortButton;
     private JProgressBar searchProgressBar;
@@ -129,6 +137,7 @@ public class FortressFinderFrame extends JFrame {
     private JButton listSearchPauseButton;
     private JButton listSearchStopButton;
     private JButton listSearchResetButton;
+    private BoundaryButtonRefs listBoundaryButtons;
     private JButton listSearchExportButton;
     private JButton listSearchExportSeedListButton;
     private JButton listSortByShapeButton;
@@ -142,7 +151,9 @@ public class FortressFinderFrame extends JFrame {
     private volatile boolean isListSearchRunning = false;
     private volatile boolean isListSearchPaused = false;
     private volatile int listSearchCompletedSeedsCount = 0;
-    /** Per-seed watchdog: abort native search if a single seed exceeds this duration. */
+    /**
+     * Per-seed watchdog: abort native search if a single seed exceeds this duration.
+     */
     private static final long LIST_SEED_MAX_MS = 60L * 60 * 1000;
     private int lastListSearchMinX = 0;
     private int lastListSearchMaxX = 0;
@@ -205,7 +216,9 @@ public class FortressFinderFrame extends JFrame {
         setLocationRelativeTo(null);
     }
 
-    /** Credit 区域补充说明（不含内存估算与阶段列表） */
+    /**
+     * Credit 区域补充说明（不含内存估算与阶段列表）
+     */
     private String buildCreditMemoryPhaseHtml() {
         return getString("hint.outputHint");
     }
@@ -282,7 +295,7 @@ public class FortressFinderFrame extends JFrame {
         gbc.gridx = 1;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.weightx = 1.0;
-        searchThreadCountField = new JTextField("1", 20); // String.valueOf(Runtime.getRuntime().availableProcessors())
+        searchThreadCountField = new JTextField(String.valueOf(Runtime.getRuntime().availableProcessors()), 20);
         // 添加输入验证，非整数时提示
         searchThreadCountField.addFocusListener(new java.awt.event.FocusAdapter() {
             public void focusLost(java.awt.event.FocusEvent e) {
@@ -423,30 +436,23 @@ public class FortressFinderFrame extends JFrame {
         languageComboBox.addActionListener(e -> changeLanguage());
         inputPanel.add(languageComboBox, gbc);
 
-        // 按钮区域
-        JPanel buttonPanel = new JPanel(new FlowLayout());
         searchStartButton = new JButton(getString("button.startSearch"));
         searchPauseButton = new JButton(getString("button.pause"));
         searchStopButton = new JButton(getString("button.stop"));
         searchResetButton = new JButton(getString("button.reset"));
         searchPauseButton.setEnabled(false);
         searchStopButton.setEnabled(false);
-        buttonPanel.add(searchStartButton);
-        buttonPanel.add(searchPauseButton);
-        buttonPanel.add(searchStopButton);
-        buttonPanel.add(searchResetButton);
+        searchBoundaryButtons = createBoundaryButtons(minXField, maxXField, minZField, maxZField);
 
-        // Static credit text above buttons
+        // Static credit text
         JPanel creditPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
         creditPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         searchCreditLabel = new JLabel(buildCreditText());
         searchCreditLabel.setFont(getLoadedFont()); // 使用加载的字体
         creditPanel.add(searchCreditLabel);
 
-        // 将 credit 和按钮放在一个容器中，credit 在上，按钮在下
-        JPanel creditButtonPanel = new JPanel(new BorderLayout());
-        creditButtonPanel.add(creditPanel, BorderLayout.NORTH);
-        creditButtonPanel.add(buttonPanel, BorderLayout.SOUTH);
+        JPanel searchButtonPanel = createThreeRowSearchButtonPanel(
+                searchStartButton, searchPauseButton, searchStopButton, searchResetButton, searchBoundaryButtons);
 
         // 进度区域
         JPanel progressPanel = new JPanel(new GridBagLayout());
@@ -474,11 +480,11 @@ public class FortressFinderFrame extends JFrame {
         progressPanel.add(searchRemainingTimeLabel, pgc);
 
         leftPanel.add(inputPanel, BorderLayout.NORTH);
-        leftPanel.add(creditButtonPanel, BorderLayout.CENTER);
+        leftPanel.add(creditPanel, BorderLayout.CENTER);
 
-        // Progress area in separate container (credit merged into label above)
         JPanel leftBottomPanel = new JPanel(new BorderLayout());
-        leftBottomPanel.add(progressPanel, BorderLayout.NORTH);
+        leftBottomPanel.add(searchButtonPanel, BorderLayout.NORTH);
+        leftBottomPanel.add(progressPanel, BorderLayout.CENTER);
 
         JPanel leftContainer = new JPanel(new BorderLayout());
         leftContainer.add(leftPanel, BorderLayout.CENTER);
@@ -717,24 +723,24 @@ public class FortressFinderFrame extends JFrame {
     }
 
     private JComboBox<String> createSearchModeCombo() {
-        JComboBox<String> combo = new JComboBox<>(new String[] {
-            getString("mode.span"), getString("mode.cross")
+        JComboBox<String> combo = new JComboBox<>(new String[]{
+                getString("mode.span"), getString("mode.cross")
         });
         combo.setSelectedIndex(0);
         return combo;
     }
 
     private JComboBox<String> createCrossFilterCombo() {
-        JComboBox<String> combo = new JComboBox<>(new String[] {
-            getString("filter.double"), getString("filter.triple"), getString("filter.quad")
+        JComboBox<String> combo = new JComboBox<>(new String[]{
+                getString("filter.double"), getString("filter.triple"), getString("filter.quad")
         });
         combo.setSelectedIndex(0);
         return combo;
     }
 
     private JComboBox<String> createMcVersionCombo() {
-        JComboBox<String> combo = new JComboBox<>(new String[] {
-            getString("mc.1_18"), getString("mc.1_19"), getString("mc.1_20"), getString("mc.1_21")
+        JComboBox<String> combo = new JComboBox<>(new String[]{
+                getString("mc.1_18"), getString("mc.1_19"), getString("mc.1_20"), getString("mc.1_21")
         });
         combo.setSelectedIndex(DEFAULT_MC_INDEX);
         return combo;
@@ -767,11 +773,11 @@ public class FortressFinderFrame extends JFrame {
             int v = Integer.parseInt(field.getText().trim());
             if (v < SPAN_EDGE_MIN) {
                 JOptionPane.showMessageDialog(this, getString("error.spanEdgeOutOfRange"), getString("prompt.error"),
-                    JOptionPane.ERROR_MESSAGE);
+                        JOptionPane.ERROR_MESSAGE);
                 field.setText(String.valueOf(SPAN_EDGE_MIN));
             } else if (v > SPAN_EDGE_MAX) {
                 JOptionPane.showMessageDialog(this, getString("error.spanEdgeOutOfRange"), getString("prompt.error"),
-                    JOptionPane.ERROR_MESSAGE);
+                        JOptionPane.ERROR_MESSAGE);
                 field.setText(String.valueOf(SPAN_EDGE_MAX));
             }
         } catch (NumberFormatException e) {
@@ -813,6 +819,7 @@ public class FortressFinderFrame extends JFrame {
         if (searchMinLongField != null) searchMinLongField.setEnabled(enabled);
         if (searchMinShortField != null) searchMinShortField.setEnabled(enabled);
         if (searchMcVersionCombo != null) searchMcVersionCombo.setEnabled(enabled);
+        setBoundaryButtonsEnabled(searchBoundaryButtons, enabled);
     }
 
     private void setListParamControlsEnabled(boolean enabled) {
@@ -821,9 +828,106 @@ public class FortressFinderFrame extends JFrame {
         if (listMinLongField != null) listMinLongField.setEnabled(enabled);
         if (listMinShortField != null) listMinShortField.setEnabled(enabled);
         if (listMcVersionCombo != null) listMcVersionCombo.setEnabled(enabled);
+        setBoundaryButtonsEnabled(listBoundaryButtons, enabled);
     }
 
-    /** Parse sort score: N from NCrossings, or long*short from span line. */
+    private static final class BoundaryButtonRefs {
+        final JButton inner;
+        final JButton northwest;
+        final JButton northeast;
+        final JButton southwest;
+        final JButton southeast;
+
+        BoundaryButtonRefs(JButton inner, JButton northwest, JButton northeast, JButton southwest, JButton southeast) {
+            this.inner = inner;
+            this.northwest = northwest;
+            this.northeast = northeast;
+            this.southwest = southwest;
+            this.southeast = southeast;
+        }
+    }
+
+    private JPanel createThreeRowSearchButtonPanel(JButton startButton, JButton pauseButton, JButton stopButton,
+                                                   JButton resetButton, BoundaryButtonRefs boundaryButtons) {
+        JPanel panel = new JPanel(new GridLayout(3, 1, 0, 2));
+        panel.setBorder(BorderFactory.createEmptyBorder(0, 0, 2, 0));
+
+        JPanel row1 = new JPanel(new FlowLayout(FlowLayout.CENTER, 5, 0));
+        row1.add(startButton);
+        row1.add(pauseButton);
+        row1.add(stopButton);
+
+        JPanel row2 = new JPanel(new FlowLayout(FlowLayout.CENTER, 5, 0));
+        row2.add(resetButton);
+        row2.add(boundaryButtons.inner);
+
+        JPanel row3 = new JPanel(new FlowLayout(FlowLayout.CENTER, 5, 0));
+        row3.add(boundaryButtons.northwest);
+        row3.add(boundaryButtons.northeast);
+        row3.add(boundaryButtons.southwest);
+        row3.add(boundaryButtons.southeast);
+
+        panel.add(row1);
+        panel.add(row2);
+        panel.add(row3);
+        return panel;
+    }
+
+    private void setSearchCoordinates(JTextField minX, JTextField maxX, JTextField minZ, JTextField maxZ,
+                                      int minXVal, int maxXVal, int minZVal, int maxZVal) {
+        minX.setText(String.valueOf(minXVal));
+        maxX.setText(String.valueOf(maxXVal));
+        minZ.setText(String.valueOf(minZVal));
+        maxZ.setText(String.valueOf(maxZVal));
+    }
+
+    private BoundaryButtonRefs createBoundaryButtons(JTextField minXField, JTextField maxXField,
+                                                     JTextField minZField, JTextField maxZField) {
+        JButton innerButton = new JButton(getString("button.setInnerBoundary"));
+        JButton nwButton = new JButton(getString("button.nwBorderSearch"));
+        JButton neButton = new JButton(getString("button.neBorderSearch"));
+        JButton swButton = new JButton(getString("button.swBorderSearch"));
+        JButton seButton = new JButton(getString("button.seBorderSearch"));
+
+        innerButton.addActionListener(e -> setSearchCoordinates(minXField, maxXField, minZField, maxZField,
+                BOUNDARY_MIN_X, BOUNDARY_MAX_X, BOUNDARY_MIN_Z, BOUNDARY_MAX_Z));
+        nwButton.addActionListener(e -> setSearchCoordinates(minXField, maxXField, minZField, maxZField,
+                EX_BOUNDARY_MIN_X, BOUNDARY_MIN_X - 1, EX_BOUNDARY_MIN_Z, BOUNDARY_MIN_Z - 1));
+        neButton.addActionListener(e -> setSearchCoordinates(minXField, maxXField, minZField, maxZField,
+                BOUNDARY_MAX_X + 1, EX_BOUNDARY_MAX_X, EX_BOUNDARY_MIN_Z, BOUNDARY_MIN_Z - 1));
+        swButton.addActionListener(e -> setSearchCoordinates(minXField, maxXField, minZField, maxZField,
+                EX_BOUNDARY_MIN_X, BOUNDARY_MIN_X - 1, BOUNDARY_MAX_Z + 1, EX_BOUNDARY_MAX_Z));
+        seButton.addActionListener(e -> setSearchCoordinates(minXField, maxXField, minZField, maxZField,
+                BOUNDARY_MAX_X + 1, EX_BOUNDARY_MAX_X, BOUNDARY_MAX_Z + 1, EX_BOUNDARY_MAX_Z));
+
+        return new BoundaryButtonRefs(innerButton, nwButton, neButton, swButton, seButton);
+    }
+
+    private void setBoundaryButtonsEnabled(BoundaryButtonRefs refs, boolean enabled) {
+        if (refs == null) {
+            return;
+        }
+        refs.inner.setEnabled(enabled);
+        refs.northwest.setEnabled(enabled);
+        refs.northeast.setEnabled(enabled);
+        refs.southwest.setEnabled(enabled);
+        refs.southeast.setEnabled(enabled);
+    }
+
+    private void updateBoundaryButtonTexts(BoundaryButtonRefs refs) {
+        if (refs == null) {
+            return;
+        }
+        refs.inner.setText(getString("button.setInnerBoundary"));
+        refs.northwest.setText(getString("button.nwBorderSearch"));
+        refs.northeast.setText(getString("button.neBorderSearch"));
+        refs.southwest.setText(getString("button.swBorderSearch"));
+        refs.southeast.setText(getString("button.seBorderSearch"));
+    }
+
+    /**
+     * Parse sort score: N from NCrossings, or long*short from span line.
+     */
     private long parseScoreFromResultLine(String line) {
         if (line == null || !line.startsWith("/tp ")) return -1;
         int crossIdx = line.indexOf("Crossings");
@@ -1063,7 +1167,7 @@ public class FortressFinderFrame extends JFrame {
             }
 
             // 检查世界边界：minX < -30000000, maxX > 30000000, minZ < -30000000, maxZ > 30000000
-            boolean outOfBounds = minX < BOUNDARY_MIN_X || maxX > BOUNDARY_MAX_X || minZ < BOUNDARY_MIN_Z || maxZ > BOUNDARY_MAX_Z;
+            boolean outOfBounds = minX < REAL_BOUNDARY_MIN_X || maxX > REAL_BOUNDARY_MAX_X || minZ < REAL_BOUNDARY_MIN_Z || maxZ > REAL_BOUNDARY_MAX_Z;
 
             if (outOfBounds) {
                 int result = JOptionPane.showConfirmDialog(
@@ -1120,8 +1224,8 @@ public class FortressFinderFrame extends JFrame {
                     searchMinLongField, searchMinShortField,
                     searchMcVersionCombo, threadCount);
             fortressRunner.startFortressSearch(params,
-                info -> updateFortressSearchProgress(resultToken, info),
-                line -> addSearchResult(resultToken, line));
+                    info -> updateFortressSearchProgress(resultToken, info),
+                    line -> addSearchResult(resultToken, line));
 
         } catch (NumberFormatException e) {
             JOptionPane.showMessageDialog(this, getString("error.invalidNumber"), getString("prompt.error"), JOptionPane.ERROR_MESSAGE);
@@ -1328,30 +1432,23 @@ public class FortressFinderFrame extends JFrame {
         });
         inputPanel.add(listMaxZField, gbc);
 
-        // 按钮区域
-        JPanel buttonPanel = new JPanel(new FlowLayout());
         listSearchStartButton = new JButton(getString("button.startSearch"));
         listSearchPauseButton = new JButton(getString("button.pause"));
         listSearchStopButton = new JButton(getString("button.stop"));
         listSearchResetButton = new JButton(getString("button.resetList"));
         listSearchPauseButton.setEnabled(false);
         listSearchStopButton.setEnabled(false);
-        buttonPanel.add(listSearchStartButton);
-        buttonPanel.add(listSearchPauseButton);
-        buttonPanel.add(listSearchStopButton);
-        buttonPanel.add(listSearchResetButton);
+        listBoundaryButtons = createBoundaryButtons(listMinXField, listMaxXField, listMinZField, listMaxZField);
 
-        // Static credit text above buttons
+        // Static credit text
         JPanel creditPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
         creditPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         listSearchCreditLabel = new JLabel(buildCreditText());
         listSearchCreditLabel.setFont(getLoadedFont());
         creditPanel.add(listSearchCreditLabel);
 
-        // 将 credit 和按钮放在一个容器中，credit 在上，按钮在下
-        JPanel creditButtonPanel = new JPanel(new BorderLayout());
-        creditButtonPanel.add(creditPanel, BorderLayout.NORTH);
-        creditButtonPanel.add(buttonPanel, BorderLayout.SOUTH);
+        JPanel listSearchButtonPanel = createThreeRowSearchButtonPanel(
+                listSearchStartButton, listSearchPauseButton, listSearchStopButton, listSearchResetButton, listBoundaryButtons);
 
         // 进度区域
         JPanel progressPanel = new JPanel(new GridBagLayout());
@@ -1384,10 +1481,10 @@ public class FortressFinderFrame extends JFrame {
         progressPanel.add(listSearchRemainingTimeLabel, pgc);
 
         leftPanel.add(inputPanel, BorderLayout.NORTH);
-        leftPanel.add(creditButtonPanel, BorderLayout.CENTER);
+        leftPanel.add(creditPanel, BorderLayout.CENTER);
 
-        // 将进度区域放在另一个容器中
         JPanel leftBottomPanel = new JPanel(new BorderLayout());
+        leftBottomPanel.add(listSearchButtonPanel, BorderLayout.NORTH);
         leftBottomPanel.add(progressPanel, BorderLayout.CENTER);
 
         JPanel leftContainer = new JPanel(new BorderLayout());
@@ -1798,12 +1895,12 @@ public class FortressFinderFrame extends JFrame {
         if (searchMinLongLabel != null) searchMinLongLabel.setText(getString("label.minLong"));
         if (searchMinShortLabel != null) searchMinShortLabel.setText(getString("label.minShort"));
         if (searchMcVersionLabel != null) searchMcVersionLabel.setText(getString("label.mcVersion"));
-        refreshComboItems(searchModeCombo, new String[] { getString("mode.span"), getString("mode.cross") });
-        refreshComboItems(searchCrossFilterCombo, new String[] {
-            getString("filter.double"), getString("filter.triple"), getString("filter.quad")
+        refreshComboItems(searchModeCombo, new String[]{getString("mode.span"), getString("mode.cross")});
+        refreshComboItems(searchCrossFilterCombo, new String[]{
+                getString("filter.double"), getString("filter.triple"), getString("filter.quad")
         });
-        refreshComboItems(searchMcVersionCombo, new String[] {
-            getString("mc.1_18"), getString("mc.1_19"), getString("mc.1_20"), getString("mc.1_21")
+        refreshComboItems(searchMcVersionCombo, new String[]{
+                getString("mc.1_18"), getString("mc.1_19"), getString("mc.1_20"), getString("mc.1_21")
         });
         if (searchMinXLabel != null) {
             searchMinXLabel.setText(getString("label.minX"));
@@ -1850,6 +1947,7 @@ public class FortressFinderFrame extends JFrame {
         if (searchSortButton != null) {
             searchSortButton.setText(getString("button.sort"));
         }
+        updateBoundaryButtonTexts(searchBoundaryButtons);
 
         // 更新进度条和标签
         if (searchProgressBar != null && !isSearchRunning) {
@@ -1892,12 +1990,12 @@ public class FortressFinderFrame extends JFrame {
         if (listSearchMinLongLabel != null) listSearchMinLongLabel.setText(getString("label.minLong"));
         if (listSearchMinShortLabel != null) listSearchMinShortLabel.setText(getString("label.minShort"));
         if (listSearchMcVersionLabel != null) listSearchMcVersionLabel.setText(getString("label.mcVersion"));
-        refreshComboItems(listSearchModeCombo, new String[] { getString("mode.span"), getString("mode.cross") });
-        refreshComboItems(listCrossFilterCombo, new String[] {
-            getString("filter.double"), getString("filter.triple"), getString("filter.quad")
+        refreshComboItems(listSearchModeCombo, new String[]{getString("mode.span"), getString("mode.cross")});
+        refreshComboItems(listCrossFilterCombo, new String[]{
+                getString("filter.double"), getString("filter.triple"), getString("filter.quad")
         });
-        refreshComboItems(listMcVersionCombo, new String[] {
-            getString("mc.1_18"), getString("mc.1_19"), getString("mc.1_20"), getString("mc.1_21")
+        refreshComboItems(listMcVersionCombo, new String[]{
+                getString("mc.1_18"), getString("mc.1_19"), getString("mc.1_20"), getString("mc.1_21")
         });
 
         // 更新按钮文本
@@ -1928,6 +2026,7 @@ public class FortressFinderFrame extends JFrame {
         if (listSearchSeedFileButton != null) {
             listSearchSeedFileButton.setText(getString("button.selectFile"));
         }
+        updateBoundaryButtonTexts(listBoundaryButtons);
 
         // 更新种子文件标签
         if (listSearchSeedFileLabel != null) {
@@ -2395,90 +2494,90 @@ public class FortressFinderFrame extends JFrame {
                 boolean finishedAllSeeds = false;
 
                 try {
-                for (int seedIndex = 0; seedIndex < seeds.size(); seedIndex++) {
-                    if (!isListSearchRunning) break;
+                    for (int seedIndex = 0; seedIndex < seeds.size(); seedIndex++) {
+                        if (!isListSearchRunning) break;
 
-                    final long seed = seeds.get(seedIndex);
-                    final int currentSeedIndex = seedIndex + 1;
-                    lastProgressUpdate[0] = 0;
-                    seedResults.put(seed, new ArrayList<>());
+                        final long seed = seeds.get(seedIndex);
+                        final int currentSeedIndex = seedIndex + 1;
+                        lastProgressUpdate[0] = 0;
+                        seedResults.put(seed, new ArrayList<>());
 
-                    try {
-                    listFortressRunner = new FortressSearchRunner();
-                    Consumer<String> seedResultCallback = result -> {
-                        if (result == null || result.isEmpty()) {
-                            return;
-                        }
-                        List<String> lines = seedResults.computeIfAbsent(seed, ignored -> new ArrayList<>());
-                        for (String line : result.split("\n", -1)) {
-                            if (!line.isEmpty()) {
-                                lines.add(line);
+                        try {
+                            listFortressRunner = new FortressSearchRunner();
+                            Consumer<String> seedResultCallback = result -> {
+                                if (result == null || result.isEmpty()) {
+                                    return;
+                                }
+                                List<String> lines = seedResults.computeIfAbsent(seed, ignored -> new ArrayList<>());
+                                for (String line : result.split("\n", -1)) {
+                                    if (!line.isEmpty()) {
+                                        lines.add(line);
+                                    }
+                                }
+                            };
+                            Consumer<FortressSearchRunner.ProgressInfo> seedProgressCallback = info -> {
+                                if (info.done()) return;
+                                if (listResultToken != listSearchResultToken.get()) return;
+                                long now = System.currentTimeMillis();
+                                if (now - lastProgressUpdate[0] < PROGRESS_INTERVAL_MS) return;
+                                lastProgressUpdate[0] = now;
+                                final long proc = info.processed();
+                                final long tot = info.total();
+                                final double pct = tot > 0 ? Math.min(100.0, proc * 100.0 / tot) : 0;
+                                SwingUtilities.invokeLater(() -> {
+                                    if (listResultToken != listSearchResultToken.get()) {
+                                        return;
+                                    }
+                                    if (isListSearchRunning) {
+                                        listSearchCurrentSeedProgressLabel.setText(
+                                                getString("currentSeed", currentSeedIndex, totalSeeds, proc, tot, pct));
+                                    }
+                                });
+                            };
+
+                            FortressSearchRunner.FortressSearchParams seedParams = new FortressSearchRunner.FortressSearchParams(
+                                    listParams.mode(), seed, minX, maxX, minZ, maxZ,
+                                    listParams.mc(), listParams.crossFilter(),
+                                    listParams.minLong(), listParams.minShort(), finalThreadCount);
+                            boolean seedFinished = runListSeedSearch(
+                                    listFortressRunner, seedParams, seedProgressCallback, seedResultCallback, seed);
+
+                            if (!isListSearchRunning) break;
+                            if (!seedFinished) {
+                                System.err.println("List search aborted during seed " + seed);
+                                break;
+                            }
+
+                            processedSeedsRef[0]++;
+                            final int completedSeeds = processedSeedsRef[0];
+                            updateListSearchSeedProgress(listResultToken, completedSeeds, totalSeeds);
+                            appendListSearchSeedResults(listResultToken, seed, seedResults.get(seed));
+                        } catch (Throwable seedError) {
+                            System.err.println("Seed " + seed + " failed: " + seedError.getMessage());
+                            seedError.printStackTrace();
+                            if (listFortressRunner != null) {
+                                listFortressRunner.stop();
                             }
                         }
-                    };
-                    Consumer<FortressSearchRunner.ProgressInfo> seedProgressCallback = info -> {
-                        if (info.done()) return;
-                        if (listResultToken != listSearchResultToken.get()) return;
-                        long now = System.currentTimeMillis();
-                        if (now - lastProgressUpdate[0] < PROGRESS_INTERVAL_MS) return;
-                        lastProgressUpdate[0] = now;
-                        final long proc = info.processed();
-                        final long tot = info.total();
-                        final double pct = tot > 0 ? Math.min(100.0, proc * 100.0 / tot) : 0;
-                        SwingUtilities.invokeLater(() -> {
-                            if (listResultToken != listSearchResultToken.get()) {
-                                return;
-                            }
-                            if (isListSearchRunning) {
-                                listSearchCurrentSeedProgressLabel.setText(
-                                        getString("currentSeed", currentSeedIndex, totalSeeds, proc, tot, pct));
-                            }
-                        });
-                    };
-
-                    FortressSearchRunner.FortressSearchParams seedParams = new FortressSearchRunner.FortressSearchParams(
-                            listParams.mode(), seed, minX, maxX, minZ, maxZ,
-                            listParams.mc(), listParams.crossFilter(),
-                            listParams.minLong(), listParams.minShort(), finalThreadCount);
-                    boolean seedFinished = runListSeedSearch(
-                            listFortressRunner, seedParams, seedProgressCallback, seedResultCallback, seed);
-
-                    if (!isListSearchRunning) break;
-                    if (!seedFinished) {
-                        System.err.println("List search aborted during seed " + seed);
-                        break;
                     }
 
-                    processedSeedsRef[0]++;
-                    final int completedSeeds = processedSeedsRef[0];
-                    updateListSearchSeedProgress(listResultToken, completedSeeds, totalSeeds);
-                    appendListSearchSeedResults(listResultToken, seed, seedResults.get(seed));
-                    } catch (Throwable seedError) {
-                        System.err.println("Seed " + seed + " failed: " + seedError.getMessage());
-                        seedError.printStackTrace();
-                        if (listFortressRunner != null) {
-                            listFortressRunner.stop();
-                        }
-                    }
-                }
-
-                finishedAllSeeds = isListSearchRunning;
+                    finishedAllSeeds = isListSearchRunning;
                 } catch (Throwable loopError) {
                     System.err.println("List search failed: " + loopError.getMessage());
                     loopError.printStackTrace();
                 } finally {
-                // 若已停止：保持界面停留在“正常显示”的最后一帧，不进入“已完成”状态
-                if (!finishedAllSeeds) {
-                    return;
-                }
+                    // 若已停止：保持界面停留在“正常显示”的最后一帧，不进入“已完成”状态
+                    if (!finishedAllSeeds) {
+                        return;
+                    }
 
-                // 所有种子处理完成
-                long finalPausedTime = pausedTimeRef[0];
-                if (pauseStartTimeRef[0] > 0) {
-                    finalPausedTime += System.currentTimeMillis() - pauseStartTimeRef[0];
-                }
-                final long finalElapsedMs = System.currentTimeMillis() - startTime - finalPausedTime;
-                finishListSearchUi(listResultToken, totalSeeds, finalElapsedMs);
+                    // 所有种子处理完成
+                    long finalPausedTime = pausedTimeRef[0];
+                    if (pauseStartTimeRef[0] > 0) {
+                        finalPausedTime += System.currentTimeMillis() - pauseStartTimeRef[0];
+                    }
+                    final long finalElapsedMs = System.currentTimeMillis() - startTime - finalPausedTime;
+                    finishListSearchUi(listResultToken, totalSeeds, finalElapsedMs);
                 }
             }).start();
 
