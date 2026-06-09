@@ -1,2 +1,2 @@
-java -jar build\libs\FortressFinder-1.0.0.jar
+java -jar build\libs\FortressFinder-1.0.1.jar
 pause

@@ -80,22 +80,32 @@ def msys2Path() {
     return candidates.find { new File(it, 'gcc.exe').exists() } ?: ''
 }
 
+def resolveJavaHome() {
+    def javaHome = System.getenv('JAVA_HOME')
+    if (javaHome) {
+        return new File(javaHome).absolutePath.replace('\\', '/')
+    }
+    def candidates = [
+            'C:/Program Files/Java/jdk-17',
+            'C:/Program Files/Eclipse Adoptium/jdk-17',
+            'C:/Program Files/Microsoft/jdk-17'
+    ]
+    for (def path : candidates) {
+        if (new File(path, 'bin/javac.exe').exists()) {
+            return path
+        }
+    }
+    throw new GradleException(
+            'JAVA_HOME not set and no JDK 17 found. Set JAVA_HOME to your JDK directory.')
+}
+
 def nativeBuildPath() {
     def msys = msys2Path()
     def path = System.getenv('PATH')
     if (path == null) {
         path = ''
     }
-    // usr/bin: sed/basename etc. for Git-for-Windows submodule scripts during FetchContent
-    def extra = []
-    if (msys) {
-        extra << msys
-        def usrBin = new File(msys, '../usr/bin').canonicalPath
-        if (new File(usrBin, 'sed.exe').exists()) {
-            extra << usrBin
-        }
-    }
-    return extra ? (extra.join(File.pathSeparator) + File.pathSeparator + path) : path
+    return msys ? (msys + File.pathSeparator + path) : path
 }
 
 ext.gradleNativeGenerator = 'Ninja'
@@ -132,23 +142,15 @@ tasks.register('checkNativeToolchain') {
                 throw new GradleException("未找到 ${msys}\\${exe}.exe，请用 pacman 安装对应包。")
             }
         }
-        def javac = null
-        def javaHome = System.getenv('JAVA_HOME')
-        if (javaHome) {
-            javac = new File(javaHome, 'bin/javac.exe')
-        }
-        if (javac == null || !javac.exists()) {
-            javac = new File('C:/Program Files/Java/jdk-17/bin/javac.exe')
-        }
-        if (!javac.exists()) {
-            throw new GradleException(
-                    '未找到 javac（JNI 头文件生成需要 JDK 17+）。请设置 JAVA_HOME 指向 JDK 安装目录。')
+        def javaHome = resolveJavaHome()
+        if (!new File(javaHome.replace('/', File.separator), 'bin/javac.exe').exists()) {
+            throw new GradleException("javac not found under JAVA_HOME: ${javaHome}")
         }
     }
 }
 
 tasks.register('cmakeConfigure', Exec) {
-    dependsOn checkNativeToolchain
+    dependsOn checkNativeToolchain, compileJava
     group = 'build'
     description = 'Configures CMake for fortressFinderLibJ (Ninja + MinGW)'
     workingDir layout.projectDirectory.asFile
@@ -156,10 +158,12 @@ tasks.register('cmakeConfigure', Exec) {
     doFirst {
         clearStaleCmakeCacheIfNeeded()
     }
+    def javaHome = resolveJavaHome()
     commandLine 'cmake', '-B', 'build', '-G', gradleNativeGenerator,
             '-DCMAKE_BUILD_TYPE=Release',
             '-DCMAKE_C_COMPILER=gcc',
             '-DCMAKE_CXX_COMPILER=g++',
+            "-DJAVA_HOME=${javaHome}",
             '-Wno-dev'
 }
 
@@ -172,7 +176,7 @@ tasks.register('buildNative', Exec) {
     commandLine 'cmake', '--build', 'build', '--target', 'fortressFinderLibJ', '--verbose'
     doFirst {
         if (!file('build/CMakeCache.txt').exists()) {
-            throw new GradleException('CMake 尚未配置成功。请查看上方 :cmakeConfigure 的报错（常见：GitHub 拉取 cubiomes 失败、生成器冲突）。')
+            throw new GradleException('CMake 尚未配置成功。请查看上方 :cmakeConfigure 的报错。')
         }
     }
 }
@@ -191,17 +195,25 @@ tasks.register('prepareNativeResources') {
         def buildNativeDir = file('build/native')
         def nativeRoot = file('native')
 
-        // Prefer CMake output; only use native/ when build/native has no libs (avoid packing DLL twice).
         def dirHasNativeLib = { File dir ->
             dir.exists() && !fileTree(dir: dir, includes: ['**/*.dll', '**/*.so', '**/*.dylib']).isEmpty()
         }
         def useBuildNative = dirHasNativeLib(buildNativeDir)
 
         if (useBuildNative) {
-            copy {
-                from(buildNativeDir)
-                include('*.dll', '**/*.dll')
-                into(new File(outDir, 'native/windows'))
+            def mingwDll = new File(buildNativeDir, 'libfortressFinderLibJ.dll')
+            if (mingwDll.exists()) {
+                copy {
+                    from(mingwDll)
+                    into(new File(outDir, 'native/windows'))
+                    rename { 'fortressFinderLibJ.dll' }
+                }
+            } else {
+                copy {
+                    from(buildNativeDir)
+                    include('fortressFinderLibJ.dll')
+                    into(new File(outDir, 'native/windows'))
+                }
             }
             copy {
                 from(buildNativeDir)

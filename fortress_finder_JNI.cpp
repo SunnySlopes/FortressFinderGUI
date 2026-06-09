@@ -1,10 +1,10 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#include "finders.h"
-#include "generator.h"
-#include "biomes.h"
-#include "util.h"
+#include "cubiomes/finders.h"
+#include "cubiomes/generator.h"
+#include "cubiomes/biomes.h"
+#include "cubiomes/util.h"
 #ifdef __cplusplus
 }
 #endif
