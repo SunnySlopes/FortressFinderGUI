@@ -7,7 +7,7 @@ plugins {
     id 'com.github.johnrengelman.shadow' version '8.1.1'
 }
 group 'sunnyslopes.fortressfinder'
-version '1.0.1'
+version '1.0.2'
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
@@ -127,6 +127,27 @@ def clearStaleCmakeCacheIfNeeded() {
     }
 }
 
+tasks.register('ensureCubiomes') {
+    group = 'build'
+    description = 'Uses local cubiomes/ if present; otherwise initializes the git submodule from GitHub'
+    doLast {
+        def marker = file('cubiomes/finders.c')
+        if (marker.exists()) {
+            logger.lifecycle('Using local cubiomes at cubiomes/ (skip GitHub submodule fetch)')
+            return
+        }
+        logger.lifecycle('Local cubiomes not found; initializing git submodule from GitHub...')
+        exec {
+            commandLine 'git', 'submodule', 'update', '--init', '--recursive'
+        }
+        if (!marker.exists()) {
+            throw new GradleException(
+                    'cubiomes not found at cubiomes/. Place a local copy there for packaging, ' +
+                            'or run: git submodule update --init --recursive')
+        }
+    }
+}
+
 tasks.register('checkNativeToolchain') {
     group = 'verification'
     description = 'Checks MSYS2 gcc/g++/ninja/cmake and JDK javac before native build'
@@ -150,7 +171,7 @@ tasks.register('checkNativeToolchain') {
 }
 
 tasks.register('cmakeConfigure', Exec) {
-    dependsOn checkNativeToolchain, compileJava
+    dependsOn checkNativeToolchain, compileJava, ensureCubiomes
     group = 'build'
     description = 'Configures CMake for fortressFinderLibJ (Ninja + MinGW)'
     workingDir layout.projectDirectory.asFile
@@ -256,7 +277,7 @@ tasks.named('processResources') {
     from(generatedNativeResourcesDir)
 }
 
-['checkNativeToolchain', 'cmakeConfigure', 'buildNative', 'prepareNativeResources',
+['ensureCubiomes', 'checkNativeToolchain', 'cmakeConfigure', 'buildNative', 'prepareNativeResources',
  'compileJava', 'processResources', 'buildMainJar'].each { taskName ->
     tasks.named(taskName).configure { mustRunAfter clean }
 }

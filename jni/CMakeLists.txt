@@ -3,7 +3,8 @@ cmake_minimum_required(VERSION 3.15)
 project(fortressFinderLibJ LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 11)
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -43,8 +44,11 @@ set(JAVA_BRIDGE_SRC ${PROJECT_ROOT}/src/main/java/sunnyslopes/fortressfinder/For
 set(JNI_GEN_DIR ${CMAKE_CURRENT_SOURCE_DIR}/generated)
 set(JNI_GEN_HEADER ${JNI_GEN_DIR}/sunnyslopes_fortressfinder_FortressFinderBridge.h)
 
-if(NOT EXISTS "${PROJECT_ROOT}/cubiomes/finders.c")
-    message(FATAL_ERROR "cubiomes not found at ${PROJECT_ROOT}/cubiomes — run: git submodule update --init --recursive")
+set(CUBIOMES_DIR ${PROJECT_ROOT}/cubiomes)
+if(NOT EXISTS "${CUBIOMES_DIR}/finders.c")
+    message(FATAL_ERROR
+            "cubiomes not found at ${CUBIOMES_DIR}. "
+            "Put a local copy in cubiomes/ for packaging, or fetch the submodule: git submodule update --init --recursive")
 endif()
 
 add_custom_command(
@@ -58,19 +62,22 @@ add_custom_command(
 
 add_custom_target(generate_jni_header DEPENDS ${JNI_GEN_HEADER})
 
-set(SOURCES
-        sunnyslopes_fortressfinder_FortressFinderBridge.cpp
-        ../cubiomes/finders.c
-        ../cubiomes/generator.c
-        ../cubiomes/layers.c
-        ../cubiomes/biomenoise.c
-        ../cubiomes/biomes.c
-        ../cubiomes/noise.c
-        ../cubiomes/util.c
-        ../cubiomes/quadbase.c
-)
+set(CUBIOMES_SOURCES)
+file(GLOB _cubiomes_root_c "${CUBIOMES_DIR}/*.c")
+foreach(_src ${_cubiomes_root_c})
+    get_filename_component(_name "${_src}" NAME)
+    if(NOT _name STREQUAL "tests.c")
+        list(APPEND CUBIOMES_SOURCES "${_src}")
+    endif()
+endforeach()
+file(GLOB _cubiomes_feat_c "${CUBIOMES_DIR}/features/*.c")
+list(APPEND CUBIOMES_SOURCES ${_cubiomes_feat_c})
 
-add_library(fortressFinderLibJ SHARED ${SOURCES} ${JNI_GEN_HEADER})
+add_library(fortressFinderLibJ SHARED
+        sunnyslopes_fortressfinder_FortressFinderBridge.cpp
+        ${CUBIOMES_SOURCES}
+        ${JNI_GEN_HEADER}
+)
 
 add_dependencies(fortressFinderLibJ generate_jni_header)
 
@@ -78,7 +85,8 @@ target_include_directories(fortressFinderLibJ PRIVATE
         ${JNI_INCLUDE_DIRS}
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/..
-        ../cubiomes
+        ${CUBIOMES_DIR}
+        ${CUBIOMES_DIR}/features
 )
 
 if(MSVC)

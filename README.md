@@ -21,7 +21,7 @@ A GUI tool for searching Nether fortresses (crossings and large-span layouts) in
 
 ```
 FortressFinder/
-  cubiomes/                                     # git submodule（cubiomes 源码）
+  cubiomes/                                     # 本地打包源码（gitignore）；缺失时从 submodule 拉取
   src/main/java/.../FortressFinderBridge.java   # JNI 接口
   src/main/java/.../FortressFinderFrame.java    # Swing UI
   src/main/java/.../FortressSearchRunner.java   # 后台搜索与进度
@@ -32,9 +32,14 @@ FortressFinder/
   build.gradle
 ```
 
-**cubiomes** 以 git submodule 放在项目根目录 `cubiomes/`，由 `jni/CMakeLists.txt` 显式编译进 `fortressFinderLibJ`，不通过 FetchContent 或 `add_subdirectory`。
+**cubiomes** 在 `.gitmodules` 中声明为 git submodule（GitHub: [Cubitect/cubiomes](https://github.com/Cubitect/cubiomes)）。根目录 `cubiomes/` 被 gitignore，不提交源码。
 
-首次克隆后初始化 submodule：
+打包/编译规则：
+
+- 若根目录已有 `cubiomes/finders.c`，**直接用这份本地源码**，不会再从 GitHub 拉取。
+- 若该目录不存在，Gradle 会执行 `git submodule update --init --recursive` 再编译。
+
+也可手动初始化 submodule：
 
 ```powershell
 git submodule update --init --recursive
@@ -54,7 +59,7 @@ git submodule update --init --recursive
 ```
 
 等价于依次执行：`clean` → `checkNativeToolchain` → `buildNative` → `prepareNativeResources` → `buildMainJar`。  
-输出 JAR：`build/libs/FortressFinder-1.0.1.jar`；中间产物：`build/native/fortressFinderLibJ.dll`。
+输出 JAR：`build/libs/FortressFinder-1.0.2.jar`；中间产物：`build/native/fortressFinderLibJ.dll`。
 
 仅编译原生库（不打 JAR）时：
 
@@ -80,7 +85,7 @@ powershell -ExecutionPolicy Bypass -File scripts/generate-jni-header.ps1
 ### Step 2 — Run / 运行
 
 ```powershell
-java -jar build\libs\FortressFinder-1.0.1.jar
+java -jar build\libs\FortressFinder-1.0.2.jar
 ```
 
 或双击 JAR，选择 **Java 17+** 打开。
@@ -88,7 +93,7 @@ java -jar build\libs\FortressFinder-1.0.1.jar
 开发调试时也可指定本地 DLL：
 
 ```powershell
-java -Djava.library.path=build\native -jar build\libs\FortressFinder-1.0.1.jar
+java -Djava.library.path=build\native -jar build\libs\FortressFinder-1.0.2.jar
 ```
 
 ---
@@ -111,7 +116,7 @@ java -Djava.library.path=build\native -jar build\libs\FortressFinder-1.0.1.jar
 
 | 现象 | 处理 |
 |------|------|
-| `cubiomes not found` | 执行 `git submodule update --init --recursive` |
+| `cubiomes not found` | 将 cubiomes 放到项目根目录 `cubiomes/`，或执行 `git submodule update --init --recursive` |
 | `buildNative` / `cmake` exit value 1 | 向上滚动查看 **ninja/gcc 的真实报错**。执行 `.\gradlew buildNative --info` |
 | `generator does not match` | 删除 `build/` 后重试 |
 | `UnsatisfiedLinkError: fortressFinderLibJ` | 先 `buildNative` + `prepareNativeResources` + `buildMainJar`，或 `-Djava.library.path=build/native` |

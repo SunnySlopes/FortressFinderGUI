@@ -42,10 +42,26 @@ public class FortressFinderFrame extends JFrame {
     private static final int DEFAULT_LIST_MIN_Z = -1024;
     private static final int DEFAULT_LIST_MAX_Z = 1023;
 
-    private static final int DEFAULT_SPAN_EDGE = 225;
+    private static final int DEFAULT_SPAN_EDGE = 240;
     private static final int SPAN_EDGE_MIN = 0;
     private static final int SPAN_EDGE_MAX = 260;
-    private static final int DEFAULT_MC_INDEX = 3;
+    private static final int DEFAULT_SQUARE_SIDE = DEFAULT_MAX_X - DEFAULT_MIN_X + 1;
+    private static final int DEFAULT_LIST_SQUARE_SIDE = DEFAULT_LIST_MAX_X - DEFAULT_LIST_MIN_X + 1;
+    /** Newest → oldest; "1.21" uses MC_1_21_1 under the hood. */
+    private static final String[] MC_VERSION_LABEL_KEYS = {
+            "mc.26_2", "mc.26_1", "mc.1_21", "mc.1_20", "mc.1_19", "mc.1_18", "mc.1_17", "mc.1_16"
+    };
+    private static final int[] MC_VERSION_CODES = {
+            FortressFinderBridge.MC_26_2,
+            FortressFinderBridge.MC_26_1,
+            FortressFinderBridge.MC_1_21,
+            FortressFinderBridge.MC_1_20,
+            FortressFinderBridge.MC_1_19,
+            FortressFinderBridge.MC_1_18,
+            FortressFinderBridge.MC_1_17,
+            FortressFinderBridge.MC_1_16
+    };
+    private static final int DEFAULT_MC_INDEX = 0;
 
     // 单种子搜索相关组件
     private JLabel searchSeedLabel;
@@ -71,6 +87,8 @@ public class FortressFinderFrame extends JFrame {
     private JTextField maxXField;
     private JTextField minZField;
     private JTextField maxZField;
+    private JCheckBox searchSquareAreaCheck;
+    private JTextField searchSquareSideField;
     private JComboBox<String> languageComboBox;
     private JButton searchStartButton;
     private JButton searchPauseButton;
@@ -96,7 +114,7 @@ public class FortressFinderFrame extends JFrame {
     private int lastSearchMinZ = 0;
     private int lastSearchMaxZ = 0;
     private int lastSearchMode = FortressFinderBridge.MODE_SPAN;
-    private int lastSearchMc = FortressFinderBridge.MC_1_21;
+    private int lastSearchMc = FortressFinderBridge.MC_26_2;
     private int lastSearchCrossFilter = FortressFinderBridge.CROSS_FILTER_ALL;
     private int lastSearchMinLong = DEFAULT_SPAN_EDGE;
     private int lastSearchMinShort = DEFAULT_SPAN_EDGE;
@@ -133,6 +151,8 @@ public class FortressFinderFrame extends JFrame {
     private JTextField listMaxXField;
     private JTextField listMinZField;
     private JTextField listMaxZField;
+    private JCheckBox listSquareAreaCheck;
+    private JTextField listSquareSideField;
     private JButton listSearchStartButton;
     private JButton listSearchPauseButton;
     private JButton listSearchStopButton;
@@ -160,7 +180,7 @@ public class FortressFinderFrame extends JFrame {
     private int lastListSearchMinZ = 0;
     private int lastListSearchMaxZ = 0;
     private int lastListSearchMode = FortressFinderBridge.MODE_SPAN;
-    private int lastListSearchMc = FortressFinderBridge.MC_1_21;
+    private int lastListSearchMc = FortressFinderBridge.MC_26_2;
     private int lastListSearchCrossFilter = FortressFinderBridge.CROSS_FILTER_ALL;
     private int lastListSearchMinLong = DEFAULT_SPAN_EDGE;
     private int lastListSearchMinShort = DEFAULT_SPAN_EDGE;
@@ -336,15 +356,23 @@ public class FortressFinderFrame extends JFrame {
         searchMcVersionLabel = new JLabel(getString("label.mcVersion"));
         searchMcVersionLabel.setFont(getLoadedFont());
         addLabelFieldRow(inputPanel, gbc, row++, searchMcVersionLabel, searchMcVersionCombo = createMcVersionCombo());
+        searchModeCombo.addActionListener(e -> {
+            if (searchModeCombo.isEnabled()) {
+                applyModeDependentControls(searchModeCombo, searchCrossFilterCombo,
+                        searchMinLongField, searchMinShortField, true);
+            }
+        });
+        applyModeDependentControls(searchModeCombo, searchCrossFilterCombo,
+                searchMinLongField, searchMinShortField, true);
 
         // MinX 输入
         gbc.gridx = 0;
         gbc.gridy = row++;
         gbc.fill = GridBagConstraints.NONE;
         gbc.weightx = 0;
-        JLabel minXLabel = new JLabel(getString("label.minX"));
-        minXLabel.setFont(getLoadedFont());
-        inputPanel.add(minXLabel, gbc);
+        searchMinXLabel = new JLabel(getString("label.minX"));
+        searchMinXLabel.setFont(getLoadedFont());
+        inputPanel.add(searchMinXLabel, gbc);
         gbc.gridx = 1;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.weightx = 1.0;
@@ -362,9 +390,9 @@ public class FortressFinderFrame extends JFrame {
         gbc.gridy = row++;
         gbc.fill = GridBagConstraints.NONE;
         gbc.weightx = 0;
-        JLabel maxXLabel = new JLabel(getString("label.maxX"));
-        maxXLabel.setFont(getLoadedFont());
-        inputPanel.add(maxXLabel, gbc);
+        searchMaxXLabel = new JLabel(getString("label.maxX"));
+        searchMaxXLabel.setFont(getLoadedFont());
+        inputPanel.add(searchMaxXLabel, gbc);
         gbc.gridx = 1;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.weightx = 1.0;
@@ -381,9 +409,9 @@ public class FortressFinderFrame extends JFrame {
         gbc.gridy = row++;
         gbc.fill = GridBagConstraints.NONE;
         gbc.weightx = 0;
-        JLabel minZLabel = new JLabel(getString("label.minZ"));
-        minZLabel.setFont(getLoadedFont());
-        inputPanel.add(minZLabel, gbc);
+        searchMinZLabel = new JLabel(getString("label.minZ"));
+        searchMinZLabel.setFont(getLoadedFont());
+        inputPanel.add(searchMinZLabel, gbc);
         gbc.gridx = 1;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.weightx = 1.0;
@@ -400,9 +428,9 @@ public class FortressFinderFrame extends JFrame {
         gbc.gridy = row++;
         gbc.fill = GridBagConstraints.NONE;
         gbc.weightx = 0;
-        JLabel maxZLabel = new JLabel(getString("label.maxZ"));
-        maxZLabel.setFont(getLoadedFont());
-        inputPanel.add(maxZLabel, gbc);
+        searchMaxZLabel = new JLabel(getString("label.maxZ"));
+        searchMaxZLabel.setFont(getLoadedFont());
+        inputPanel.add(searchMaxZLabel, gbc);
         gbc.gridx = 1;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.weightx = 1.0;
@@ -413,6 +441,25 @@ public class FortressFinderFrame extends JFrame {
             }
         });
         inputPanel.add(maxZField, gbc);
+
+        searchSquareAreaCheck = new JCheckBox(getString("label.squareSide"));
+        searchSquareAreaCheck.setFont(getLoadedFont());
+        searchSquareAreaCheck.setSelected(true);
+        searchSquareSideField = new JTextField(String.valueOf(DEFAULT_SQUARE_SIDE), 20);
+        searchSquareSideField.addFocusListener(new java.awt.event.FocusAdapter() {
+            public void focusLost(java.awt.event.FocusEvent e) {
+                if (searchSquareAreaCheck.isSelected()) {
+                    applySquareSideToCoords(searchSquareSideField, minXField, maxXField, minZField, maxZField,
+                            DEFAULT_SQUARE_SIDE);
+                }
+            }
+        });
+        addLabelFieldRow(inputPanel, gbc, row++, searchSquareAreaCheck, searchSquareSideField);
+        searchSquareAreaCheck.addActionListener(e ->
+                applySquareAreaUiState(searchSquareAreaCheck, searchSquareSideField,
+                        minXField, maxXField, minZField, maxZField, true, DEFAULT_SQUARE_SIDE));
+        applySquareAreaUiState(searchSquareAreaCheck, searchSquareSideField,
+                minXField, maxXField, minZField, maxZField, true, DEFAULT_SQUARE_SIDE);
 
         // 语言选择下拉框
         gbc.gridx = 0;
@@ -442,7 +489,9 @@ public class FortressFinderFrame extends JFrame {
         searchResetButton = new JButton(getString("button.reset"));
         searchPauseButton.setEnabled(false);
         searchStopButton.setEnabled(false);
-        searchBoundaryButtons = createBoundaryButtons(minXField, maxXField, minZField, maxZField);
+        searchBoundaryButtons = createBoundaryButtons(minXField, maxXField, minZField, maxZField,
+                () -> uncheckSquareArea(searchSquareAreaCheck, searchSquareSideField,
+                        minXField, maxXField, minZField, maxZField, true));
 
         // Static credit text
         JPanel creditPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
@@ -645,10 +694,9 @@ public class FortressFinderFrame extends JFrame {
                 searchSeedField.setEnabled(true);
                 searchThreadCountField.setEnabled(true);
                 setSearchParamControlsEnabled(true);
-                minXField.setEnabled(true);
-                maxXField.setEnabled(true);
-                minZField.setEnabled(true);
-                maxZField.setEnabled(true);
+                applySquareAreaUiState(searchSquareAreaCheck, searchSquareSideField,
+                        minXField, maxXField, minZField, maxZField, true, DEFAULT_SQUARE_SIDE);
+                if (searchSquareAreaCheck != null) searchSquareAreaCheck.setEnabled(true);
                 if (languageComboBox != null) {
                     languageComboBox.setEnabled(true);
                 }
@@ -710,7 +758,7 @@ public class FortressFinderFrame extends JFrame {
         }
     }
 
-    private void addLabelFieldRow(JPanel panel, GridBagConstraints gbc, int row, JLabel label, JComponent field) {
+    private void addLabelFieldRow(JPanel panel, GridBagConstraints gbc, int row, JComponent label, JComponent field) {
         gbc.gridx = 0;
         gbc.gridy = row;
         gbc.fill = GridBagConstraints.NONE;
@@ -738,10 +786,16 @@ public class FortressFinderFrame extends JFrame {
         return combo;
     }
 
+    private String[] mcVersionLabels() {
+        String[] labels = new String[MC_VERSION_LABEL_KEYS.length];
+        for (int i = 0; i < MC_VERSION_LABEL_KEYS.length; i++) {
+            labels[i] = getString(MC_VERSION_LABEL_KEYS[i]);
+        }
+        return labels;
+    }
+
     private JComboBox<String> createMcVersionCombo() {
-        JComboBox<String> combo = new JComboBox<>(new String[]{
-                getString("mc.1_18"), getString("mc.1_19"), getString("mc.1_20"), getString("mc.1_21")
-        });
+        JComboBox<String> combo = new JComboBox<>(mcVersionLabels());
         combo.setSelectedIndex(DEFAULT_MC_INDEX);
         return combo;
     }
@@ -759,12 +813,11 @@ public class FortressFinderFrame extends JFrame {
     }
 
     private int getMcFromCombo(JComboBox<String> combo) {
-        return switch (combo.getSelectedIndex()) {
-            case 0 -> FortressFinderBridge.MC_1_18;
-            case 1 -> FortressFinderBridge.MC_1_19;
-            case 2 -> FortressFinderBridge.MC_1_20;
-            default -> FortressFinderBridge.MC_1_21;
-        };
+        int index = combo.getSelectedIndex();
+        if (index < 0 || index >= MC_VERSION_CODES.length) {
+            return MC_VERSION_CODES[DEFAULT_MC_INDEX];
+        }
+        return MC_VERSION_CODES[index];
     }
 
     private void clampSpanEdgeField(JTextField field) {
@@ -813,21 +866,44 @@ public class FortressFinderFrame extends JFrame {
                 threadCount);
     }
 
+    private void applyModeDependentControls(JComboBox<String> modeCombo, JComboBox<String> crossCombo,
+            JTextField minLongField, JTextField minShortField, boolean parentEnabled) {
+        if (modeCombo == null || crossCombo == null || minLongField == null || minShortField == null) {
+            return;
+        }
+        if (!parentEnabled) {
+            crossCombo.setEnabled(false);
+            minLongField.setEnabled(false);
+            minShortField.setEnabled(false);
+            return;
+        }
+        boolean spanMode = getModeFromCombo(modeCombo) == FortressFinderBridge.MODE_SPAN;
+        crossCombo.setEnabled(!spanMode);
+        minLongField.setEnabled(spanMode);
+        minShortField.setEnabled(spanMode);
+    }
+
+    private void ensureMinLongAtLeastMinShort(JTextField minLongField, JTextField minShortField) {
+        int minLong = parseSpanEdge(minLongField);
+        int minShort = parseSpanEdge(minShortField);
+        if (minLong < minShort) {
+            minLongField.setText(String.valueOf(minShort));
+        }
+    }
+
     private void setSearchParamControlsEnabled(boolean enabled) {
         if (searchModeCombo != null) searchModeCombo.setEnabled(enabled);
-        if (searchCrossFilterCombo != null) searchCrossFilterCombo.setEnabled(enabled);
-        if (searchMinLongField != null) searchMinLongField.setEnabled(enabled);
-        if (searchMinShortField != null) searchMinShortField.setEnabled(enabled);
         if (searchMcVersionCombo != null) searchMcVersionCombo.setEnabled(enabled);
+        applyModeDependentControls(searchModeCombo, searchCrossFilterCombo,
+                searchMinLongField, searchMinShortField, enabled);
         setBoundaryButtonsEnabled(searchBoundaryButtons, enabled);
     }
 
     private void setListParamControlsEnabled(boolean enabled) {
         if (listSearchModeCombo != null) listSearchModeCombo.setEnabled(enabled);
-        if (listCrossFilterCombo != null) listCrossFilterCombo.setEnabled(enabled);
-        if (listMinLongField != null) listMinLongField.setEnabled(enabled);
-        if (listMinShortField != null) listMinShortField.setEnabled(enabled);
         if (listMcVersionCombo != null) listMcVersionCombo.setEnabled(enabled);
+        applyModeDependentControls(listSearchModeCombo, listCrossFilterCombo,
+                listMinLongField, listMinShortField, enabled);
         setBoundaryButtonsEnabled(listBoundaryButtons, enabled);
     }
 
@@ -881,24 +957,116 @@ public class FortressFinderFrame extends JFrame {
         maxZ.setText(String.valueOf(maxZVal));
     }
 
+    private int[] squareBoundsFromSide(int side) {
+        int min = -side / 2;
+        int max = min + side - 1;
+        return new int[]{min, max};
+    }
+
+    private int parseSquareSide(JTextField sideField, int fallback) {
+        if (sideField == null) {
+            return fallback;
+        }
+        try {
+            int side = Integer.parseInt(sideField.getText().trim());
+            if (side < 1) {
+                sideField.setText(String.valueOf(fallback));
+                return fallback;
+            }
+            return side;
+        } catch (NumberFormatException e) {
+            sideField.setText(String.valueOf(fallback));
+            return fallback;
+        }
+    }
+
+    private void applySquareSideToCoords(JTextField sideField, JTextField minX, JTextField maxX,
+                                         JTextField minZ, JTextField maxZ, int fallbackSide) {
+        int side = parseSquareSide(sideField, fallbackSide);
+        int[] bounds = squareBoundsFromSide(side);
+        setSearchCoordinates(minX, maxX, minZ, maxZ, bounds[0], bounds[1], bounds[0], bounds[1]);
+    }
+
+    private void setCoordFieldsEnabled(JTextField minX, JTextField maxX, JTextField minZ, JTextField maxZ,
+                                       boolean enabled) {
+        if (minX != null) minX.setEnabled(enabled);
+        if (maxX != null) maxX.setEnabled(enabled);
+        if (minZ != null) minZ.setEnabled(enabled);
+        if (maxZ != null) maxZ.setEnabled(enabled);
+    }
+
+    private void applySquareAreaUiState(JCheckBox check, JTextField sideField,
+                                        JTextField minX, JTextField maxX, JTextField minZ, JTextField maxZ,
+                                        boolean parentEnabled, int fallbackSide) {
+        if (check == null) {
+            return;
+        }
+        boolean square = check.isSelected();
+        if (sideField != null) {
+            sideField.setEnabled(parentEnabled && square);
+        }
+        setCoordFieldsEnabled(minX, maxX, minZ, maxZ, parentEnabled && !square);
+        if (square && parentEnabled) {
+            applySquareSideToCoords(sideField, minX, maxX, minZ, maxZ, fallbackSide);
+        }
+    }
+
+    private void uncheckSquareArea(JCheckBox check, JTextField sideField,
+                                   JTextField minX, JTextField maxX, JTextField minZ, JTextField maxZ,
+                                   boolean parentEnabled) {
+        if (check == null) {
+            return;
+        }
+        check.setSelected(false);
+        applySquareAreaUiState(check, sideField, minX, maxX, minZ, maxZ, parentEnabled, 1);
+    }
+
+    private void checkSquareAreaDefaults(JCheckBox check, JTextField sideField,
+                                         JTextField minX, JTextField maxX, JTextField minZ, JTextField maxZ,
+                                         int defaultSide, boolean parentEnabled) {
+        if (sideField != null) {
+            sideField.setText(String.valueOf(defaultSide));
+        }
+        if (check != null) {
+            check.setSelected(true);
+        }
+        applySquareAreaUiState(check, sideField, minX, maxX, minZ, maxZ, parentEnabled, defaultSide);
+    }
+
     private BoundaryButtonRefs createBoundaryButtons(JTextField minXField, JTextField maxXField,
-                                                     JTextField minZField, JTextField maxZField) {
+                                                     JTextField minZField, JTextField maxZField,
+                                                     Runnable onCornerBorderPreset) {
         JButton innerButton = new JButton(getString("button.setInnerBoundary"));
         JButton nwButton = new JButton(getString("button.nwBorderSearch"));
         JButton neButton = new JButton(getString("button.neBorderSearch"));
         JButton swButton = new JButton(getString("button.swBorderSearch"));
         JButton seButton = new JButton(getString("button.seBorderSearch"));
 
-        innerButton.addActionListener(e -> setSearchCoordinates(minXField, maxXField, minZField, maxZField,
-                BOUNDARY_MIN_X, BOUNDARY_MAX_X, BOUNDARY_MIN_Z, BOUNDARY_MAX_Z));
-        nwButton.addActionListener(e -> setSearchCoordinates(minXField, maxXField, minZField, maxZField,
-                EX_BOUNDARY_MIN_X, BOUNDARY_MIN_X - 1, EX_BOUNDARY_MIN_Z, BOUNDARY_MIN_Z - 1));
-        neButton.addActionListener(e -> setSearchCoordinates(minXField, maxXField, minZField, maxZField,
-                BOUNDARY_MAX_X + 1, EX_BOUNDARY_MAX_X, EX_BOUNDARY_MIN_Z, BOUNDARY_MIN_Z - 1));
-        swButton.addActionListener(e -> setSearchCoordinates(minXField, maxXField, minZField, maxZField,
-                EX_BOUNDARY_MIN_X, BOUNDARY_MIN_X - 1, BOUNDARY_MAX_Z + 1, EX_BOUNDARY_MAX_Z));
-        seButton.addActionListener(e -> setSearchCoordinates(minXField, maxXField, minZField, maxZField,
-                BOUNDARY_MAX_X + 1, EX_BOUNDARY_MAX_X, BOUNDARY_MAX_Z + 1, EX_BOUNDARY_MAX_Z));
+        innerButton.addActionListener(e -> {
+            if (onCornerBorderPreset != null) onCornerBorderPreset.run();
+            setSearchCoordinates(minXField, maxXField, minZField, maxZField,
+                    BOUNDARY_MIN_X, BOUNDARY_MAX_X, BOUNDARY_MIN_Z, BOUNDARY_MAX_Z);
+        });
+        nwButton.addActionListener(e -> {
+            if (onCornerBorderPreset != null) onCornerBorderPreset.run();
+            setSearchCoordinates(minXField, maxXField, minZField, maxZField,
+                    EX_BOUNDARY_MIN_X, BOUNDARY_MIN_X - 1, EX_BOUNDARY_MIN_Z, BOUNDARY_MIN_Z - 1);
+        });
+        neButton.addActionListener(e -> {
+            if (onCornerBorderPreset != null) onCornerBorderPreset.run();
+            setSearchCoordinates(minXField, maxXField, minZField, maxZField,
+                    BOUNDARY_MAX_X + 1, EX_BOUNDARY_MAX_X, EX_BOUNDARY_MIN_Z, BOUNDARY_MIN_Z - 1);
+        });
+        swButton.addActionListener(e -> {
+            if (onCornerBorderPreset != null) onCornerBorderPreset.run();
+            setSearchCoordinates(minXField, maxXField, minZField, maxZField,
+                    EX_BOUNDARY_MIN_X, BOUNDARY_MIN_X - 1, BOUNDARY_MAX_Z + 1, EX_BOUNDARY_MAX_Z);
+        });
+        seButton.addActionListener(e -> {
+            if (onCornerBorderPreset != null) onCornerBorderPreset.run();
+            setSearchCoordinates(minXField, maxXField, minZField, maxZField,
+                    BOUNDARY_MAX_X + 1, EX_BOUNDARY_MAX_X, BOUNDARY_MAX_Z + 1, EX_BOUNDARY_MAX_Z);
+        });
 
         return new BoundaryButtonRefs(innerButton, nwButton, neButton, swButton, seButton);
     }
@@ -973,32 +1141,29 @@ public class FortressFinderFrame extends JFrame {
     }
 
     private void sortSearchResults() {
+        sortSearchResultsByDistance();
+    }
+
+    private void sortSearchResultsByDistance() {
         String text = searchResultArea.getText().trim();
         if (text.isEmpty()) return;
         String[] lines = text.split("\n");
-        List<String> withArea = new ArrayList<>();
+        List<String> withPos = new ArrayList<>();
         List<String> other = new ArrayList<>();
         for (String line : lines) {
             line = line.trim();
             if (line.isEmpty()) continue;
-            long score = parseScoreFromResultLine(line);
-            if (score >= 0) {
-                withArea.add(line);
+            if (line.startsWith("/tp ")) {
+                withPos.add(line);
             } else {
                 other.add(line);
             }
         }
-        withArea.sort((a, b) -> {
-            int byScore = Long.compare(parseScoreFromResultLine(b), parseScoreFromResultLine(a));
-            if (byScore != 0) {
-                return byScore;
-            }
-            return Double.compare(
-                    parseDistanceSquaredFromResultLine(a),
-                    parseDistanceSquaredFromResultLine(b));
-        });
+        withPos.sort((a, b) -> Double.compare(
+                parseDistanceSquaredFromResultLine(a),
+                parseDistanceSquaredFromResultLine(b)));
         StringBuilder sb = new StringBuilder();
-        for (String s : withArea) sb.append(s).append("\n");
+        for (String s : withPos) sb.append(s).append("\n");
         for (String s : other) sb.append(s).append("\n");
         searchResultArea.setText(sb.toString());
     }
@@ -1084,6 +1249,26 @@ public class FortressFinderFrame extends JFrame {
 
             clampSpanEdgeField(searchMinLongField);
             clampSpanEdgeField(searchMinShortField);
+            if (getModeFromCombo(searchModeCombo) == FortressFinderBridge.MODE_SPAN) {
+                ensureMinLongAtLeastMinShort(searchMinLongField, searchMinShortField);
+            }
+
+            if (searchSquareAreaCheck != null && searchSquareAreaCheck.isSelected()) {
+                try {
+                    int side = Integer.parseInt(searchSquareSideField.getText().trim());
+                    if (side < 1) {
+                        JOptionPane.showMessageDialog(this, getString("error.squareSideInvalid"),
+                                getString("prompt.error"), JOptionPane.ERROR_MESSAGE);
+                        return;
+                    }
+                    applySquareSideToCoords(searchSquareSideField, minXField, maxXField, minZField, maxZField,
+                            DEFAULT_SQUARE_SIDE);
+                } catch (NumberFormatException e) {
+                    JOptionPane.showMessageDialog(this, getString("error.squareSideInvalid"),
+                            getString("prompt.error"), JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+            }
 
             // 验证XZ坐标
             String minXText = minXField.getText().trim();
@@ -1204,10 +1389,9 @@ public class FortressFinderFrame extends JFrame {
             searchSeedField.setEnabled(false);
             searchThreadCountField.setEnabled(false);
             setSearchParamControlsEnabled(false);
-            minXField.setEnabled(false);
-            maxXField.setEnabled(false);
-            minZField.setEnabled(false);
-            maxZField.setEnabled(false);
+            applySquareAreaUiState(searchSquareAreaCheck, searchSquareSideField,
+                    minXField, maxXField, minZField, maxZField, false, DEFAULT_SQUARE_SIDE);
+            if (searchSquareAreaCheck != null) searchSquareAreaCheck.setEnabled(false);
             if (languageComboBox != null) languageComboBox.setEnabled(false);
             final long resultToken = singleSearchResultToken.incrementAndGet();
             searchResultArea.setText("");
@@ -1261,15 +1445,8 @@ public class FortressFinderFrame extends JFrame {
     }
 
     private void resetSearchToDefaults() {
-        if (searchModeCombo != null) searchModeCombo.setSelectedIndex(0);
-        if (searchCrossFilterCombo != null) searchCrossFilterCombo.setSelectedIndex(0);
-        if (searchMinLongField != null) searchMinLongField.setText(String.valueOf(DEFAULT_SPAN_EDGE));
-        if (searchMinShortField != null) searchMinShortField.setText(String.valueOf(DEFAULT_SPAN_EDGE));
-        if (searchMcVersionCombo != null) searchMcVersionCombo.setSelectedIndex(DEFAULT_MC_INDEX);
-        minXField.setText(String.valueOf(DEFAULT_MIN_X));
-        maxXField.setText(String.valueOf(DEFAULT_MAX_X));
-        minZField.setText(String.valueOf(DEFAULT_MIN_Z));
-        maxZField.setText(String.valueOf(DEFAULT_MAX_Z));
+        checkSquareAreaDefaults(searchSquareAreaCheck, searchSquareSideField,
+                minXField, maxXField, minZField, maxZField, DEFAULT_SQUARE_SIDE, true);
     }
 
     // 创建从种子列表搜索面板
@@ -1355,6 +1532,14 @@ public class FortressFinderFrame extends JFrame {
         listSearchMcVersionLabel = new JLabel(getString("label.mcVersion"));
         listSearchMcVersionLabel.setFont(getLoadedFont());
         addLabelFieldRow(inputPanel, gbc, listRow++, listSearchMcVersionLabel, listMcVersionCombo = createMcVersionCombo());
+        listSearchModeCombo.addActionListener(e -> {
+            if (listSearchModeCombo.isEnabled()) {
+                applyModeDependentControls(listSearchModeCombo, listCrossFilterCombo,
+                        listMinLongField, listMinShortField, true);
+            }
+        });
+        applyModeDependentControls(listSearchModeCombo, listCrossFilterCombo,
+                listMinLongField, listMinShortField, true);
 
         // MinX 输入
         gbc.gridx = 0;
@@ -1432,13 +1617,34 @@ public class FortressFinderFrame extends JFrame {
         });
         inputPanel.add(listMaxZField, gbc);
 
+        listSquareAreaCheck = new JCheckBox(getString("label.squareSide"));
+        listSquareAreaCheck.setFont(getLoadedFont());
+        listSquareAreaCheck.setSelected(true);
+        listSquareSideField = new JTextField(String.valueOf(DEFAULT_LIST_SQUARE_SIDE), 20);
+        listSquareSideField.addFocusListener(new java.awt.event.FocusAdapter() {
+            public void focusLost(java.awt.event.FocusEvent e) {
+                if (listSquareAreaCheck.isSelected()) {
+                    applySquareSideToCoords(listSquareSideField, listMinXField, listMaxXField,
+                            listMinZField, listMaxZField, DEFAULT_LIST_SQUARE_SIDE);
+                }
+            }
+        });
+        addLabelFieldRow(inputPanel, gbc, listRow++, listSquareAreaCheck, listSquareSideField);
+        listSquareAreaCheck.addActionListener(e ->
+                applySquareAreaUiState(listSquareAreaCheck, listSquareSideField,
+                        listMinXField, listMaxXField, listMinZField, listMaxZField, true, DEFAULT_LIST_SQUARE_SIDE));
+        applySquareAreaUiState(listSquareAreaCheck, listSquareSideField,
+                listMinXField, listMaxXField, listMinZField, listMaxZField, true, DEFAULT_LIST_SQUARE_SIDE);
+
         listSearchStartButton = new JButton(getString("button.startSearch"));
         listSearchPauseButton = new JButton(getString("button.pause"));
         listSearchStopButton = new JButton(getString("button.stop"));
         listSearchResetButton = new JButton(getString("button.resetList"));
         listSearchPauseButton.setEnabled(false);
         listSearchStopButton.setEnabled(false);
-        listBoundaryButtons = createBoundaryButtons(listMinXField, listMaxXField, listMinZField, listMaxZField);
+        listBoundaryButtons = createBoundaryButtons(listMinXField, listMaxXField, listMinZField, listMaxZField,
+                () -> uncheckSquareArea(listSquareAreaCheck, listSquareSideField,
+                        listMinXField, listMaxXField, listMinZField, listMaxZField, true));
 
         // Static credit text
         JPanel creditPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
@@ -1576,10 +1782,9 @@ public class FortressFinderFrame extends JFrame {
         searchSeedField.setEnabled(true);
         searchThreadCountField.setEnabled(true);
         setSearchParamControlsEnabled(true);
-        minXField.setEnabled(true);
-        maxXField.setEnabled(true);
-        minZField.setEnabled(true);
-        maxZField.setEnabled(true);
+        applySquareAreaUiState(searchSquareAreaCheck, searchSquareSideField,
+                minXField, maxXField, minZField, maxZField, true, DEFAULT_SQUARE_SIDE);
+        if (searchSquareAreaCheck != null) searchSquareAreaCheck.setEnabled(true);
         if (languageComboBox != null) languageComboBox.setEnabled(true);
     }
 
@@ -1595,6 +1800,7 @@ public class FortressFinderFrame extends JFrame {
             if (!result.endsWith("\n")) {
                 searchResultArea.append("\n");
             }
+            sortSearchResultsByDistance();
             searchResultArea.setCaretPosition(searchResultArea.getDocument().getLength());
         });
     }
@@ -1611,6 +1817,7 @@ public class FortressFinderFrame extends JFrame {
             for (String result : results) {
                 listSearchResultArea.append(result + "\n");
             }
+            sortListByDistance();
             listSearchResultArea.setCaretPosition(listSearchResultArea.getDocument().getLength());
         });
     }
@@ -1680,15 +1887,15 @@ public class FortressFinderFrame extends JFrame {
             listSearchSeedFileButton.setEnabled(true);
             listSearchThreadCountField.setEnabled(true);
             setListParamControlsEnabled(true);
-            listMinXField.setEnabled(true);
-            listMaxXField.setEnabled(true);
-            listMinZField.setEnabled(true);
-            listMaxZField.setEnabled(true);
+            applySquareAreaUiState(listSquareAreaCheck, listSquareSideField,
+                    listMinXField, listMaxXField, listMinZField, listMaxZField, true, DEFAULT_LIST_SQUARE_SIDE);
+            if (listSquareAreaCheck != null) listSquareAreaCheck.setEnabled(true);
             listSearchProgressBar.setValue((int) totalSeeds);
             listSearchProgressBar.setString(getString("progress.seedsDone", totalSeeds, totalSeeds));
             listSearchCurrentSeedProgressLabel.setText(getString("currentSeed.complete"));
             listSearchElapsedTimeLabel.setText(getString("elapsedTime", formatTime(elapsedMs)));
             listSearchRemainingTimeLabel.setText(getString("remainingTime.completed"));
+            sortListByDistance();
         });
     }
 
@@ -1899,9 +2106,10 @@ public class FortressFinderFrame extends JFrame {
         refreshComboItems(searchCrossFilterCombo, new String[]{
                 getString("filter.double"), getString("filter.triple"), getString("filter.quad")
         });
-        refreshComboItems(searchMcVersionCombo, new String[]{
-                getString("mc.1_18"), getString("mc.1_19"), getString("mc.1_20"), getString("mc.1_21")
-        });
+        refreshComboItems(searchMcVersionCombo, mcVersionLabels());
+        applyModeDependentControls(searchModeCombo, searchCrossFilterCombo,
+                searchMinLongField, searchMinShortField,
+                searchModeCombo != null && searchModeCombo.isEnabled());
         if (searchMinXLabel != null) {
             searchMinXLabel.setText(getString("label.minX"));
         }
@@ -1913,6 +2121,9 @@ public class FortressFinderFrame extends JFrame {
         }
         if (searchMaxZLabel != null) {
             searchMaxZLabel.setText(getString("label.maxZ"));
+        }
+        if (searchSquareAreaCheck != null) {
+            searchSquareAreaCheck.setText(getString("label.squareSide"));
         }
         if (searchLanguageLabel != null) {
             searchLanguageLabel.setText(getString("label.language"));
@@ -1985,6 +2196,9 @@ public class FortressFinderFrame extends JFrame {
         if (listSearchMaxZLabel != null) {
             listSearchMaxZLabel.setText(getString("label.maxZ"));
         }
+        if (listSquareAreaCheck != null) {
+            listSquareAreaCheck.setText(getString("label.squareSide"));
+        }
         if (listSearchModeLabel != null) listSearchModeLabel.setText(getString("label.searchMode"));
         if (listSearchCrossFilterLabel != null) listSearchCrossFilterLabel.setText(getString("label.crossFilter"));
         if (listSearchMinLongLabel != null) listSearchMinLongLabel.setText(getString("label.minLong"));
@@ -1994,9 +2208,10 @@ public class FortressFinderFrame extends JFrame {
         refreshComboItems(listCrossFilterCombo, new String[]{
                 getString("filter.double"), getString("filter.triple"), getString("filter.quad")
         });
-        refreshComboItems(listMcVersionCombo, new String[]{
-                getString("mc.1_18"), getString("mc.1_19"), getString("mc.1_20"), getString("mc.1_21")
-        });
+        refreshComboItems(listMcVersionCombo, mcVersionLabels());
+        applyModeDependentControls(listSearchModeCombo, listCrossFilterCombo,
+                listMinLongField, listMinShortField,
+                listSearchModeCombo != null && listSearchModeCombo.isEnabled());
 
         // 更新按钮文本
         if (listSearchStartButton != null) {
@@ -2169,10 +2384,9 @@ public class FortressFinderFrame extends JFrame {
                 listSearchSeedFileButton.setEnabled(true);
                 listSearchThreadCountField.setEnabled(true);
                 setListParamControlsEnabled(true);
-                listMinXField.setEnabled(true);
-                listMaxXField.setEnabled(true);
-                listMinZField.setEnabled(true);
-                listMaxZField.setEnabled(true);
+                applySquareAreaUiState(listSquareAreaCheck, listSquareSideField,
+                        listMinXField, listMaxXField, listMinZField, listMaxZField, true, DEFAULT_LIST_SQUARE_SIDE);
+                if (listSquareAreaCheck != null) listSquareAreaCheck.setEnabled(true);
                 listSearchResultToken.incrementAndGet();
                 listSearchResultArea.setText("");
                 listSearchProgressBar.setValue(0);
@@ -2299,6 +2513,26 @@ public class FortressFinderFrame extends JFrame {
 
             clampSpanEdgeField(listMinLongField);
             clampSpanEdgeField(listMinShortField);
+            if (getModeFromCombo(listSearchModeCombo) == FortressFinderBridge.MODE_SPAN) {
+                ensureMinLongAtLeastMinShort(listMinLongField, listMinShortField);
+            }
+
+            if (listSquareAreaCheck != null && listSquareAreaCheck.isSelected()) {
+                try {
+                    int side = Integer.parseInt(listSquareSideField.getText().trim());
+                    if (side < 1) {
+                        JOptionPane.showMessageDialog(this, getString("error.squareSideInvalid"),
+                                getString("prompt.error"), JOptionPane.ERROR_MESSAGE);
+                        return;
+                    }
+                    applySquareSideToCoords(listSquareSideField, listMinXField, listMaxXField,
+                            listMinZField, listMaxZField, DEFAULT_LIST_SQUARE_SIDE);
+                } catch (NumberFormatException e) {
+                    JOptionPane.showMessageDialog(this, getString("error.squareSideInvalid"),
+                            getString("prompt.error"), JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+            }
 
             // 验证XZ坐标
             String minXText = listMinXField.getText().trim();
@@ -2403,10 +2637,9 @@ public class FortressFinderFrame extends JFrame {
             listSearchSeedFileButton.setEnabled(false);
             listSearchThreadCountField.setEnabled(false);
             setListParamControlsEnabled(false);
-            listMinXField.setEnabled(false);
-            listMaxXField.setEnabled(false);
-            listMinZField.setEnabled(false);
-            listMaxZField.setEnabled(false);
+            applySquareAreaUiState(listSquareAreaCheck, listSquareSideField,
+                    listMinXField, listMaxXField, listMinZField, listMaxZField, false, DEFAULT_LIST_SQUARE_SIDE);
+            if (listSquareAreaCheck != null) listSquareAreaCheck.setEnabled(false);
             final long listResultToken = listSearchResultToken.incrementAndGet();
             listSearchResultArea.setText("");
             listSearchProgressBar.setMaximum((int) seeds.size());
@@ -2615,22 +2848,14 @@ public class FortressFinderFrame extends JFrame {
         listSearchSeedFileButton.setEnabled(true);
         listSearchThreadCountField.setEnabled(true);
         setListParamControlsEnabled(true);
-        listMinXField.setEnabled(true);
-        listMaxXField.setEnabled(true);
-        listMinZField.setEnabled(true);
-        listMaxZField.setEnabled(true);
+        applySquareAreaUiState(listSquareAreaCheck, listSquareSideField,
+                listMinXField, listMaxXField, listMinZField, listMaxZField, true, DEFAULT_LIST_SQUARE_SIDE);
+        if (listSquareAreaCheck != null) listSquareAreaCheck.setEnabled(true);
     }
 
     private void resetListSearchToDefaults() {
-        if (listSearchModeCombo != null) listSearchModeCombo.setSelectedIndex(0);
-        if (listCrossFilterCombo != null) listCrossFilterCombo.setSelectedIndex(0);
-        if (listMinLongField != null) listMinLongField.setText(String.valueOf(DEFAULT_SPAN_EDGE));
-        if (listMinShortField != null) listMinShortField.setText(String.valueOf(DEFAULT_SPAN_EDGE));
-        if (listMcVersionCombo != null) listMcVersionCombo.setSelectedIndex(DEFAULT_MC_INDEX);
-        listMinXField.setText(String.valueOf(DEFAULT_LIST_MIN_X));
-        listMaxXField.setText(String.valueOf(DEFAULT_LIST_MAX_X));
-        listMinZField.setText(String.valueOf(DEFAULT_LIST_MIN_Z));
-        listMaxZField.setText(String.valueOf(DEFAULT_LIST_MAX_Z));
+        checkSquareAreaDefaults(listSquareAreaCheck, listSquareSideField,
+                listMinXField, listMaxXField, listMinZField, listMaxZField, DEFAULT_LIST_SQUARE_SIDE, true);
     }
 
     // 解析结果文本，返回种子与河流结果行（x z area ratio%）的映射

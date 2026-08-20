@@ -1,4 +1,7 @@
 .gradle
+# Local cubiomes tree used for packaging. Official fallback is the submodule in .gitmodules.
+# If this directory exists (finders.c present), Gradle uses it and does not fetch GitHub.
+/cubiomes/
 build/
 build-ninja/
 cmake-build-debug/

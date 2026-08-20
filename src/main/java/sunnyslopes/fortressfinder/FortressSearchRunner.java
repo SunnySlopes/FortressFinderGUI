@@ -1,5 +1,8 @@
 package sunnyslopes.fortressfinder;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -88,26 +91,29 @@ public class FortressSearchRunner {
         int stride = mode == FortressFinderBridge.MODE_SPAN
                 ? FortressFinderBridge.SPAN_STRIDE
                 : FortressFinderBridge.CROSS_STRIDE;
-        StringBuilder sb = new StringBuilder();
+        record ResultLine(int x, int z, String text) {}
+        List<ResultLine> lines = new ArrayList<>();
         for (int i = 0; i + stride <= raw.length; i += stride) {
+            int outX = raw[i + 2];
+            int outY = raw[i + 3];
+            int outZ = raw[i + 4];
+            String text;
             if (mode == FortressFinderBridge.MODE_SPAN) {
-                int outX = raw[i + 2];
-                int outY = raw[i + 3];
-                int outZ = raw[i + 4];
                 int longEdge = raw[i + 5];
                 int shortEdge = raw[i + 6];
-                sb.append(String.format("/tp %d %d %d %d*%d", outX, outY, outZ, longEdge, shortEdge))
-                        .append('\n');
+                text = String.format("/tp %d %d %d %d*%d", outX, outY, outZ, longEdge, shortEdge);
             } else {
-                int outX = raw[i + 2];
-                int outY = raw[i + 3];
-                int outZ = raw[i + 4];
                 int shapeCode = raw[i + 5];
                 int n = shapeCode == FortressFinderBridge.SHAPE_QUAD ? 4
                         : shapeCode == FortressFinderBridge.SHAPE_TRIPLE ? 3 : 2;
-                sb.append(String.format("/tp %d %d %d %dCrossings", outX, outY, outZ, n))
-                        .append('\n');
+                text = String.format("/tp %d %d %d %dCrossings", outX, outY, outZ, n);
             }
+            lines.add(new ResultLine(outX, outZ, text));
+        }
+        lines.sort(Comparator.comparingDouble(r -> (double) r.x * r.x + (double) r.z * r.z));
+        StringBuilder sb = new StringBuilder();
+        for (ResultLine line : lines) {
+            sb.append(line.text).append('\n');
         }
         return sb.toString();
     }

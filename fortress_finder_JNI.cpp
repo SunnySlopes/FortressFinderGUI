@@ -5,6 +5,11 @@ extern "C" {
 #include "cubiomes/generator.h"
 #include "cubiomes/biomes.h"
 #include "cubiomes/util.h"
+#if defined(__has_include)
+#  if __has_include("cubiomes/features/fortress.h")
+#    include "cubiomes/features/fortress.h"
+#  endif
+#endif
 #ifdef __cplusplus
 }
 #endif
@@ -27,6 +32,8 @@ struct Progress {
     std::atomic_int phase1{0};
     std::atomic_bool try_pause{false};
     std::atomic_bool try_stop{false};
+    /** Optional per-search cancel flag (not shared across parallel searches). */
+    std::atomic_bool *external_stop{nullptr};
 };
 
 struct FortressHit {
@@ -478,9 +485,13 @@ namespace {
     bool checkProgress(Progress *progress) {
         if (!progress)
             return true;
+        if (progress->external_stop && progress->external_stop->load())
+            return false;
         while (progress->try_pause.load()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
             if (progress->try_stop.load())
+                return false;
+            if (progress->external_stop && progress->external_stop->load())
                 return false;
         }
         return !progress->try_stop.load();
@@ -579,17 +590,25 @@ namespace {
                 return 1;
             };
 
-            // 若堡垒内存在四联路口，仅输出四联，忽略同堡垒的二联/三联
-            int quadStatus = tryEmitCross("quad", tryQuad);
-            if (quadStatus < 0)
-                return;
-            if (quadStatus > 0)
-                continue;
-
-            if (tryEmitCross("double", tryDouble) < 0)
-                return;
-            if (tryEmitCross("triple", tryTriple) < 0)
-                return;
+            // 按过滤器从高到低取一种布局：同一堡垒只输出一种（最高匹配）
+            if (filterAllows(cfg.crossFilter, "quad")) {
+                int quadStatus = tryEmitCross("quad", tryQuad);
+                if (quadStatus < 0)
+                    return;
+                if (quadStatus > 0)
+                    continue;
+            }
+            if (filterAllows(cfg.crossFilter, "triple")) {
+                int tripleStatus = tryEmitCross("triple", tryTriple);
+                if (tripleStatus < 0)
+                    return;
+                if (tripleStatus > 0)
+                    continue;
+            }
+            if (filterAllows(cfg.crossFilter, "double")) {
+                if (tryEmitCross("double", tryDouble) < 0)
+                    return;
+            }
         }
     }
 } // namespace
