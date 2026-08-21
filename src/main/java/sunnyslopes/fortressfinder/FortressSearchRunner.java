@@ -189,22 +189,40 @@ public class FortressSearchRunner {
             FortressSearchParams params,
             Consumer<ProgressInfo> progressCallback,
             Consumer<String> resultCallback) {
+        runFortressSearchBlocking(params, progressCallback, resultCallback, true);
+    }
+
+    public void runFortressSearchBlocking(
+            FortressSearchParams params,
+            Consumer<ProgressInfo> progressCallback,
+            Consumer<String> resultCallback,
+            boolean resetNativeState) {
         if (isRunning) return;
-        runFortressSearch(params, progressCallback, resultCallback);
+        runFortressSearch(params, progressCallback, resultCallback, resetNativeState);
     }
 
     private void runFortressSearch(
             FortressSearchParams params,
             Consumer<ProgressInfo> progressCallback,
             Consumer<String> resultCallback) {
+        runFortressSearch(params, progressCallback, resultCallback, true);
+    }
+
+    private void runFortressSearch(
+            FortressSearchParams params,
+            Consumer<ProgressInfo> progressCallback,
+            Consumer<String> resultCallback,
+            boolean resetNativeState) {
         isRunning = true;
         isPaused = false;
         totalPausedMs = 0;
         pauseStartMs = 0;
         runStartTimeMs = System.currentTimeMillis();
-        try {
-            FortressFinderBridge.resetSearchState();
-        } catch (Throwable ignored) {
+        if (resetNativeState) {
+            try {
+                FortressFinderBridge.resetSearchState();
+            } catch (Throwable ignored) {
+            }
         }
         int threads = Math.max(1, Math.min(params.threadCount(), Runtime.getRuntime().availableProcessors()));
 

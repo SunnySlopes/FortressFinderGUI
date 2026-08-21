@@ -9,6 +9,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.Locale;
@@ -165,7 +170,6 @@ public class FortressFinderFrame extends JFrame {
     private JProgressBar listSearchProgressBar;
     private JLabel listSearchElapsedTimeLabel;
     private JLabel listSearchRemainingTimeLabel;
-    private JLabel listSearchCurrentSeedProgressLabel;
     private JTextArea listSearchResultArea;
     private FortressSearchRunner listFortressRunner;
     private volatile boolean isListSearchRunning = false;
@@ -1492,7 +1496,7 @@ public class FortressFinderFrame extends JFrame {
         gbc.gridx = 1;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.weightx = 1.0;
-        listSearchThreadCountField = new JTextField("1", 20); // String.valueOf(Runtime.getRuntime().availableProcessors())
+        listSearchThreadCountField = new JTextField(String.valueOf(Runtime.getRuntime().availableProcessors()), 20);
         listSearchThreadCountField.addFocusListener(new java.awt.event.FocusAdapter() {
             public void focusLost(java.awt.event.FocusEvent e) {
                 validateIntegerInput(listSearchThreadCountField, getString("label.threadCount").replace(":", ""));
@@ -1678,11 +1682,6 @@ public class FortressFinderFrame extends JFrame {
         progressPanel.add(listSearchElapsedTimeLabel, pgc);
 
         pgc.gridy = 2;
-        listSearchCurrentSeedProgressLabel = new JLabel(getString("currentSeed.default"));
-        listSearchCurrentSeedProgressLabel.setFont(getLoadedFont());
-        progressPanel.add(listSearchCurrentSeedProgressLabel, pgc);
-
-        pgc.gridy = 3;
         listSearchRemainingTimeLabel = new JLabel(getString("remainingTime.calculating"));
         progressPanel.add(listSearchRemainingTimeLabel, pgc);
 
@@ -1836,11 +1835,10 @@ public class FortressFinderFrame extends JFrame {
     private boolean runListSeedSearch(
             FortressSearchRunner runner,
             FortressSearchRunner.FortressSearchParams seedParams,
-            Consumer<FortressSearchRunner.ProgressInfo> seedProgressCallback,
             Consumer<String> seedResultCallback,
             long seed) {
         Thread seedThread = new Thread(
-                () -> runner.runFortressSearchBlocking(seedParams, seedProgressCallback, seedResultCallback),
+                () -> runner.runFortressSearchBlocking(seedParams, null, seedResultCallback, false),
                 "fortressfinder-list-seed-" + seed);
         seedThread.setDaemon(true);
         seedThread.start();
@@ -1892,7 +1890,6 @@ public class FortressFinderFrame extends JFrame {
             if (listSquareAreaCheck != null) listSquareAreaCheck.setEnabled(true);
             listSearchProgressBar.setValue((int) totalSeeds);
             listSearchProgressBar.setString(getString("progress.seedsDone", totalSeeds, totalSeeds));
-            listSearchCurrentSeedProgressLabel.setText(getString("currentSeed.complete"));
             listSearchElapsedTimeLabel.setText(getString("elapsedTime", formatTime(elapsedMs)));
             listSearchRemainingTimeLabel.setText(getString("remainingTime.completed"));
             sortListByDistance();
@@ -2262,9 +2259,6 @@ public class FortressFinderFrame extends JFrame {
         if (listSearchRemainingTimeLabel != null && !isListSearchRunning) {
             listSearchRemainingTimeLabel.setText(getString("remainingTime.calculating"));
         }
-        if (listSearchCurrentSeedProgressLabel != null && !isListSearchRunning) {
-            listSearchCurrentSeedProgressLabel.setText(getString("currentSeed.default"));
-        }
 
         // 更新credit文本
         if (listSearchCreditLabel != null) {
@@ -2391,7 +2385,6 @@ public class FortressFinderFrame extends JFrame {
                 listSearchResultArea.setText("");
                 listSearchProgressBar.setValue(0);
                 listSearchProgressBar.setString(getString("progress.total", 0, 0, 0.0));
-                listSearchCurrentSeedProgressLabel.setText(getString("currentSeed.default"));
                 listSearchRemainingTimeLabel.setText(getString("remainingTime.reset"));
             }
         } catch (NumberFormatException e) {
@@ -2466,7 +2459,6 @@ public class FortressFinderFrame extends JFrame {
                     listSearchProgressBar.setMaximum((int) totalSeeds);
                     listSearchProgressBar.setValue(0);
                     listSearchProgressBar.setString(getString("progress.seedsDone", 0, totalSeeds));
-                    listSearchCurrentSeedProgressLabel.setText(getString("currentSeed.default"));
                 });
             } catch (IOException e) {
                 JOptionPane.showMessageDialog(this, getString("error.seedFileReadFailed", e.getMessage()), getString("prompt.error"), JOptionPane.ERROR_MESSAGE);
@@ -2645,7 +2637,6 @@ public class FortressFinderFrame extends JFrame {
             listSearchProgressBar.setMaximum((int) seeds.size());
             listSearchProgressBar.setValue(0);
             listSearchProgressBar.setString(getString("progress.seedsDone", 0, seeds.size()));
-            listSearchCurrentSeedProgressLabel.setText(getString("currentSeed.default"));
             listSearchElapsedTimeLabel.setText(getString("elapsedTime", formatTime(0)));
             listSearchRemainingTimeLabel.setText(getString("remainingTime.calculating"));
 
@@ -2656,42 +2647,31 @@ public class FortressFinderFrame extends JFrame {
                     listSearchModeCombo, listCrossFilterCombo,
                     listMinLongField, listMinShortField,
                     listMcVersionCombo, threadCount);
-            final int finalThreadCount = threadCount;
-            final long totalSeeds = seeds.size();
+            // Multi-seed: parallelize across seeds; each seed always uses 1 native thread.
+            final int seedParallelism = Math.max(1, threadCount);
+            final List<Long> seedList = new ArrayList<>(seeds);
+            final long totalSeeds = seedList.size();
             final long startTime = System.currentTimeMillis();
-            // 暂停时间跟踪
-            final long[] pausedTimeRef = {0}; // 累计暂停时间
-            final long[] pauseStartTimeRef = {0}; // 暂停开始时间
+            final long[] pausedTimeRef = {0};
+            final long[] pauseStartTimeRef = {0};
 
-            // 启动进度监控线程，定期更新时间显示
             Thread progressMonitorThread = new Thread(() -> {
                 while (isListSearchRunning) {
                     try {
-                        Thread.sleep(100); // 每100ms更新一次
-
-                        // 更新暂停时间跟踪
+                        Thread.sleep(100);
                         if (isListSearchPaused) {
-                            // 记录暂停开始时间
                             if (pauseStartTimeRef[0] == 0) {
                                 pauseStartTimeRef[0] = System.currentTimeMillis();
                             }
-                        } else {
-                            // 如果从暂停恢复，累计暂停时间
-                            if (pauseStartTimeRef[0] > 0) {
-                                pausedTimeRef[0] += System.currentTimeMillis() - pauseStartTimeRef[0];
-                                pauseStartTimeRef[0] = 0;
-                            }
+                        } else if (pauseStartTimeRef[0] > 0) {
+                            pausedTimeRef[0] += System.currentTimeMillis() - pauseStartTimeRef[0];
+                            pauseStartTimeRef[0] = 0;
                         }
-
-                        // 计算实际已用时间（排除暂停时间）
                         long currentPausedTime = pausedTimeRef[0];
                         if (pauseStartTimeRef[0] > 0) {
-                            // 如果当前正在暂停，也要计入当前暂停时间
                             currentPausedTime += System.currentTimeMillis() - pauseStartTimeRef[0];
                         }
                         final long elapsedMs = System.currentTimeMillis() - startTime - currentPausedTime;
-
-                        // 获取当前完成的种子数（需要从UI获取或使用共享变量）
                         SwingUtilities.invokeLater(() -> {
                             if (listResultToken != listSearchResultToken.get()) {
                                 return;
@@ -2703,7 +2683,8 @@ public class FortressFinderFrame extends JFrame {
                                     listSearchRemainingTimeLabel.setText(getString("remainingTime.paused"));
                                     return;
                                 }
-                                final long remainingMs = elapsedMs > 0 ? (elapsedMs * (totalSeeds - currentProgress) / currentProgress) : 0;
+                                final long remainingMs = elapsedMs > 0
+                                        ? (elapsedMs * (totalSeeds - currentProgress) / currentProgress) : 0;
                                 listSearchElapsedTimeLabel.setText(getString("elapsedTime", formatTime(elapsedMs)));
                                 if (remainingMs > 0) {
                                     listSearchRemainingTimeLabel.setText(getString("remainingTime", formatTime(remainingMs)));
@@ -2721,95 +2702,107 @@ public class FortressFinderFrame extends JFrame {
             progressMonitorThread.start();
 
             new Thread(() -> {
-                final int[] processedSeedsRef = {0};
-                final long[] lastProgressUpdate = {0};
-                final long PROGRESS_INTERVAL_MS = 100;
                 boolean finishedAllSeeds = false;
-
+                ExecutorService executor = Executors.newFixedThreadPool(seedParallelism);
                 try {
-                    for (int seedIndex = 0; seedIndex < seeds.size(); seedIndex++) {
-                        if (!isListSearchRunning) break;
+                    FortressFinderBridge.resetSearchState();
+                    AtomicInteger processedSeeds = new AtomicInteger(0);
+                    List<Future<?>> futures = new ArrayList<>(seedList.size());
 
-                        final long seed = seeds.get(seedIndex);
-                        final int currentSeedIndex = seedIndex + 1;
-                        lastProgressUpdate[0] = 0;
-                        seedResults.put(seed, new ArrayList<>());
-
-                        try {
-                            listFortressRunner = new FortressSearchRunner();
+                    for (long seedValue : seedList) {
+                        final long seed = seedValue;
+                        futures.add(executor.submit(() -> {
+                            if (!isListSearchRunning) {
+                                return;
+                            }
+                            seedResults.put(seed, new ArrayList<>());
+                            FortressSearchRunner runner = new FortressSearchRunner();
+                            listFortressRunner = runner;
                             Consumer<String> seedResultCallback = result -> {
                                 if (result == null || result.isEmpty()) {
                                     return;
                                 }
                                 List<String> lines = seedResults.computeIfAbsent(seed, ignored -> new ArrayList<>());
-                                for (String line : result.split("\n", -1)) {
-                                    if (!line.isEmpty()) {
-                                        lines.add(line);
+                                synchronized (lines) {
+                                    for (String line : result.split("\n", -1)) {
+                                        if (!line.isEmpty()) {
+                                            lines.add(line);
+                                        }
                                     }
                                 }
                             };
-                            Consumer<FortressSearchRunner.ProgressInfo> seedProgressCallback = info -> {
-                                if (info.done()) return;
-                                if (listResultToken != listSearchResultToken.get()) return;
-                                long now = System.currentTimeMillis();
-                                if (now - lastProgressUpdate[0] < PROGRESS_INTERVAL_MS) return;
-                                lastProgressUpdate[0] = now;
-                                final long proc = info.processed();
-                                final long tot = info.total();
-                                final double pct = tot > 0 ? Math.min(100.0, proc * 100.0 / tot) : 0;
-                                SwingUtilities.invokeLater(() -> {
-                                    if (listResultToken != listSearchResultToken.get()) {
-                                        return;
-                                    }
-                                    if (isListSearchRunning) {
-                                        listSearchCurrentSeedProgressLabel.setText(
-                                                getString("currentSeed", currentSeedIndex, totalSeeds, proc, tot, pct));
-                                    }
-                                });
-                            };
-
-                            FortressSearchRunner.FortressSearchParams seedParams = new FortressSearchRunner.FortressSearchParams(
-                                    listParams.mode(), seed, minX, maxX, minZ, maxZ,
-                                    listParams.mc(), listParams.crossFilter(),
-                                    listParams.minLong(), listParams.minShort(), finalThreadCount);
-                            boolean seedFinished = runListSeedSearch(
-                                    listFortressRunner, seedParams, seedProgressCallback, seedResultCallback, seed);
-
-                            if (!isListSearchRunning) break;
-                            if (!seedFinished) {
-                                System.err.println("List search aborted during seed " + seed);
-                                break;
+                            // Always 1 native thread per seed; parallelism is across seeds.
+                            FortressSearchRunner.FortressSearchParams seedParams =
+                                    new FortressSearchRunner.FortressSearchParams(
+                                            listParams.mode(), seed, minX, maxX, minZ, maxZ,
+                                            listParams.mc(), listParams.crossFilter(),
+                                            listParams.minLong(), listParams.minShort(), 1);
+                            try {
+                                boolean seedFinished = runListSeedSearch(
+                                        runner, seedParams, seedResultCallback, seed);
+                                if (!seedFinished && isListSearchRunning) {
+                                    System.err.println("List search aborted during seed " + seed);
+                                }
+                            } catch (Throwable seedError) {
+                                System.err.println("Seed " + seed + " failed: " + seedError.getMessage());
+                                seedError.printStackTrace();
+                                runner.stop();
+                            } finally {
+                                int completedSeeds = processedSeeds.incrementAndGet();
+                                updateListSearchSeedProgress(listResultToken, completedSeeds, totalSeeds);
+                                appendListSearchSeedResults(listResultToken, seed, seedResults.get(seed));
                             }
-
-                            processedSeedsRef[0]++;
-                            final int completedSeeds = processedSeedsRef[0];
-                            updateListSearchSeedProgress(listResultToken, completedSeeds, totalSeeds);
-                            appendListSearchSeedResults(listResultToken, seed, seedResults.get(seed));
-                        } catch (Throwable seedError) {
-                            System.err.println("Seed " + seed + " failed: " + seedError.getMessage());
-                            seedError.printStackTrace();
-                            if (listFortressRunner != null) {
-                                listFortressRunner.stop();
-                            }
-                        }
+                        }));
                     }
 
+                    for (Future<?> future : futures) {
+                        try {
+                            future.get();
+                        } catch (Exception ignored) {
+                        }
+                        if (!isListSearchRunning) {
+                            break;
+                        }
+                    }
                     finishedAllSeeds = isListSearchRunning;
                 } catch (Throwable loopError) {
                     System.err.println("List search failed: " + loopError.getMessage());
                     loopError.printStackTrace();
                 } finally {
-                    // 若已停止：保持界面停留在“正常显示”的最后一帧，不进入“已完成”状态
+                    executor.shutdownNow();
+                    try {
+                        executor.awaitTermination(30, TimeUnit.SECONDS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
                     if (!finishedAllSeeds) {
                         return;
                     }
-
-                    // 所有种子处理完成
                     long finalPausedTime = pausedTimeRef[0];
                     if (pauseStartTimeRef[0] > 0) {
                         finalPausedTime += System.currentTimeMillis() - pauseStartTimeRef[0];
                     }
                     final long finalElapsedMs = System.currentTimeMillis() - startTime - finalPausedTime;
+                    // Rewrite results in seed-file order for stable output across runs.
+                    SwingUtilities.invokeLater(() -> {
+                        if (listResultToken != listSearchResultToken.get()) {
+                            return;
+                        }
+                        StringBuilder ordered = new StringBuilder();
+                        for (Long seed : seedList) {
+                            List<String> lines = seedResults.get(seed);
+                            if (lines == null || lines.isEmpty()) {
+                                continue;
+                            }
+                            ordered.append(seed).append("\n");
+                            synchronized (lines) {
+                                for (String line : lines) {
+                                    ordered.append(line).append("\n");
+                                }
+                            }
+                        }
+                        listSearchResultArea.setText(ordered.toString());
+                    });
                     finishListSearchUi(listResultToken, totalSeeds, finalElapsedMs);
                 }
             }).start();
@@ -2820,13 +2813,21 @@ public class FortressFinderFrame extends JFrame {
     }
 
     private void toggleListSearchPause() {
-        if (listFortressRunner == null || !isListSearchRunning) return;
+        if (!isListSearchRunning) return;
         if (isListSearchPaused) {
-            listFortressRunner.resume();
+            if (listFortressRunner != null) {
+                listFortressRunner.resume();
+            } else {
+                FortressFinderBridge.resume();
+            }
             isListSearchPaused = false;
             listSearchPauseButton.setText(getString("button.pause"));
         } else {
-            listFortressRunner.pause();
+            if (listFortressRunner != null) {
+                listFortressRunner.pause();
+            } else {
+                FortressFinderBridge.pause();
+            }
             isListSearchPaused = true;
             listSearchPauseButton.setText(getString("button.resume"));
         }
@@ -2836,6 +2837,8 @@ public class FortressFinderFrame extends JFrame {
     private void stopListSearch() {
         if (listFortressRunner != null) {
             listFortressRunner.stop();
+        } else {
+            FortressFinderBridge.stop();
         }
         listSearchResultToken.incrementAndGet();
         isListSearchRunning = false;

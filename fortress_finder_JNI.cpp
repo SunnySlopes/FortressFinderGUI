@@ -32,9 +32,19 @@ struct Progress {
     std::atomic_int phase1{0};
     std::atomic_bool try_pause{false};
     std::atomic_bool try_stop{false};
-    /** Optional per-search cancel flag (not shared across parallel searches). */
-    std::atomic_bool *external_stop{nullptr};
 };
+
+// Global control so parallel multi-seed searches share one pause/stop switch.
+static std::atomic_bool g_search_pause{false};
+static std::atomic_bool g_search_stop{false};
+
+void fortressControlPause() { g_search_pause.store(true); }
+void fortressControlResume() { g_search_pause.store(false); }
+void fortressControlStop() { g_search_stop.store(true); }
+void fortressControlReset() {
+    g_search_pause.store(false);
+    g_search_stop.store(false);
+}
 
 struct FortressHit {
     int chunkX = 0;
@@ -483,18 +493,12 @@ namespace {
     };
 
     bool checkProgress(Progress *progress) {
-        if (!progress)
-            return true;
-        if (progress->external_stop && progress->external_stop->load())
-            return false;
-        while (progress->try_pause.load()) {
+        while (g_search_pause.load() || (progress && progress->try_pause.load())) {
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
-            if (progress->try_stop.load())
-                return false;
-            if (progress->external_stop && progress->external_stop->load())
+            if (g_search_stop.load() || (progress && progress->try_stop.load()))
                 return false;
         }
-        return !progress->try_stop.load();
+        return !(g_search_stop.load() || (progress && progress->try_stop.load()));
     }
 
     void processRegionStrip(
@@ -590,25 +594,17 @@ namespace {
                 return 1;
             };
 
-            // 按过滤器从高到低取一种布局：同一堡垒只输出一种（最高匹配）
-            if (filterAllows(cfg.crossFilter, "quad")) {
-                int quadStatus = tryEmitCross("quad", tryQuad);
-                if (quadStatus < 0)
-                    return;
-                if (quadStatus > 0)
-                    continue;
-            }
-            if (filterAllows(cfg.crossFilter, "triple")) {
-                int tripleStatus = tryEmitCross("triple", tryTriple);
-                if (tripleStatus < 0)
-                    return;
-                if (tripleStatus > 0)
-                    continue;
-            }
-            if (filterAllows(cfg.crossFilter, "double")) {
-                if (tryEmitCross("double", tryDouble) < 0)
-                    return;
-            }
+            // 若堡垒内存在四联路口，仅输出四联，忽略同堡垒的二联/三联
+            int quadStatus = tryEmitCross("quad", tryQuad);
+            if (quadStatus < 0)
+                return;
+            if (quadStatus > 0)
+                continue;
+
+            if (tryEmitCross("double", tryDouble) < 0)
+                return;
+            if (tryEmitCross("triple", tryTriple) < 0)
+                return;
         }
     }
 } // namespace
@@ -629,8 +625,7 @@ void runFortressSearch(const SearchConfig &cfg,
         progress->total = regXCount;
         progress->chunkInRunning = 0;
         progress->phase1 = 1;
-        progress->try_pause = false;
-        progress->try_stop = false;
+        // try_pause / try_stop are controlled only via pause()/resume()/stop()/resetSearchState()
     }
 
     DedupState dedup;

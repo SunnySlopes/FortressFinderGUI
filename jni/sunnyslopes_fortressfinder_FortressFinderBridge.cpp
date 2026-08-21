@@ -63,21 +63,32 @@ JNIEXPORT jintArray JNICALL Java_sunnyslopes_fortressfinder_FortressFinderBridge
     cfg.minLong = minLong;
     cfg.minShort = minShort;
 
-    globalResults.clear();
-    progress.current = 0;
-    progress.total = 1;
-    progress.chunkInRunning = 0;
-    progress.phase1 = 1;
-    progress.try_pause = false;
-    progress.try_stop = false;
+    // Per-call progress + results so concurrent list-mode seed searches do not clobber each other.
+    Progress localProgress{};
+    ThreadSafeResults<FortressHit> localResults{};
+    localProgress.current = 0;
+    localProgress.total = 1;
+    localProgress.chunkInRunning = 0;
+    localProgress.phase1 = 1;
 
-    runFortressSearch(cfg, &progress, globalResults, numThreads);
+    runFortressSearch(cfg, &localProgress, localResults, numThreads);
 
-    progress.try_pause = false;
-    if (progress.try_stop.load())
+    // Mirror latest progress for single-seed UI polling (list mode ignores this).
+    progress.current = localProgress.current.load();
+    progress.total = localProgress.total.load();
+    progress.chunkInRunning = localProgress.chunkInRunning.load();
+    progress.phase1 = localProgress.phase1.load();
+
+    if (g_search_stop.load() || localProgress.try_stop.load())
         return nullptr;
 
-    auto hits = globalResults.getAllResults();
+    auto hits = localResults.getAllResults();
+    {
+        globalResults.clear();
+        if (!hits.empty()) {
+            globalResults.addResults(hits);
+        }
+    }
     if (hits.empty())
         return nullptr;
 
@@ -126,24 +137,28 @@ JNIEXPORT jintArray JNICALL Java_sunnyslopes_fortressfinder_FortressFinderBridge
 
 JNIEXPORT jboolean JNICALL Java_sunnyslopes_fortressfinder_FortressFinderBridge_pause
   (JNIEnv *, jclass) {
+    fortressControlPause();
     progress.try_pause = true;
     return JNI_TRUE;
 }
 
 JNIEXPORT jboolean JNICALL Java_sunnyslopes_fortressfinder_FortressFinderBridge_resume
   (JNIEnv *, jclass) {
+    fortressControlResume();
     progress.try_pause = false;
     return JNI_TRUE;
 }
 
 JNIEXPORT jboolean JNICALL Java_sunnyslopes_fortressfinder_FortressFinderBridge_stop
   (JNIEnv *, jclass) {
+    fortressControlStop();
     progress.try_stop = true;
     return JNI_TRUE;
 }
 
 JNIEXPORT void JNICALL Java_sunnyslopes_fortressfinder_FortressFinderBridge_resetSearchState
   (JNIEnv *, jclass) {
+    fortressControlReset();
     progress.try_pause = false;
     progress.try_stop = false;
 }
