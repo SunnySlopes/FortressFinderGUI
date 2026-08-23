@@ -12,15 +12,16 @@ static int g_lastSearchMode = 0;
 static std::vector<jint> hitsToFlatInts(const std::vector<FortressHit> &hits, int mode) {
     std::vector<jint> flat;
     if (mode == 1) {
-        flat.reserve(hits.size() * 7);
+        flat.reserve(hits.size() * 8);
         for (const FortressHit &h: hits) {
             flat.push_back(h.chunkX);
             flat.push_back(h.chunkZ);
             flat.push_back(h.outX);
             flat.push_back(h.outY);
             flat.push_back(h.outZ);
-            flat.push_back(h.longEdge);
-            flat.push_back(h.shortEdge);
+            flat.push_back(h.longEdge);   // spanX
+            flat.push_back(h.heightEdge); // spanY
+            flat.push_back(h.shortEdge);  // spanZ
         }
     } else {
         flat.reserve(hits.size() * 6);
@@ -49,7 +50,7 @@ static jintArray makeIntArray(JNIEnv *env, const std::vector<jint> &data) {
 
 JNIEXPORT jintArray JNICALL Java_sunnyslopes_fortressfinder_FortressFinderBridge_fortressSearch
   (JNIEnv *env, jclass, jint mode, jlong seed, jint centerX, jint centerZ, jint r,
-   jint mc, jint crossFilter, jint minLong, jint minShort, jint numThreads) {
+   jint mc, jint crossFilter, jint minLong, jint minShort, jint minHeight, jint numThreads) {
     g_lastSearchMode = mode;
 
     SearchConfig cfg;
@@ -62,6 +63,7 @@ JNIEXPORT jintArray JNICALL Java_sunnyslopes_fortressfinder_FortressFinderBridge
     cfg.crossFilter = crossFilter;
     cfg.minLong = minLong;
     cfg.minShort = minShort;
+    cfg.minHeight = minHeight;
 
     // Per-call progress + results so concurrent list-mode seed searches do not clobber each other.
     Progress localProgress{};

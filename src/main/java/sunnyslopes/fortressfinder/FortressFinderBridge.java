@@ -49,42 +49,55 @@ public final class FortressFinderBridge {
 
     /** ints per hit in cross mode results */
     public static final int CROSS_STRIDE = 6;
-    /** ints per hit in span mode results */
-    public static final int SPAN_STRIDE = 7;
+    /** ints per hit in span mode: chunkX,chunkZ,outX,outY,outZ,spanX,spanY,spanZ */
+    public static final int SPAN_STRIDE = 8;
 
     private static void loadNativeLibrary() {
         if (loaded) return;
+        UnsatisfiedLinkError firstError = null;
+        // Prefer freshly built libs on disk over stale JAR/classpath resources.
+        if (tryLoadFromProjectNativeDirs()) {
+            loaded = true;
+            return;
+        }
         try {
             System.loadLibrary("fortressFinderLibJ");
             loaded = true;
             return;
         } catch (UnsatisfiedLinkError e) {
-            UnsatisfiedLinkError firstError = e;
-            if (tryLoadFromBundledResources()) {
-                loaded = true;
-                return;
-            }
-            Path base = Paths.get(System.getProperty("user.dir", "."));
-            List<String> libNames = getNativeLibNamesForCurrentOs();
-            Path[] candidates = {
-                base.resolve("native"),
-                base.resolve("build").resolve("native"),
-                base.resolve("build"),
-            };
-            for (Path dir : candidates) {
-                for (String libName : libNames) {
-                    File f = dir.resolve(libName).toFile();
-                    if (f.exists()) {
+            firstError = e;
+        }
+        if (tryLoadFromBundledResources()) {
+            loaded = true;
+            return;
+        }
+        throw new UnsatisfiedLinkError(
+            "fortressFinderLibJ native library not found. Build with: gradle buildNative. "
+                + (firstError != null ? firstError.getMessage() : ""));
+    }
+
+    private static boolean tryLoadFromProjectNativeDirs() {
+        Path base = Paths.get(System.getProperty("user.dir", "."));
+        List<String> libNames = getNativeLibNamesForCurrentOs();
+        Path[] candidates = {
+            base.resolve("native"),
+            base.resolve("build").resolve("native"),
+            base.resolve("build"),
+        };
+        for (Path dir : candidates) {
+            for (String libName : libNames) {
+                File f = dir.resolve(libName).toFile();
+                if (f.isFile()) {
+                    try {
                         System.load(f.getAbsolutePath());
-                        loaded = true;
-                        return;
+                        return true;
+                    } catch (UnsatisfiedLinkError ignored) {
+                        // try next candidate
                     }
                 }
             }
-            throw new UnsatisfiedLinkError(
-                "fortressFinderLibJ native library not found. Build with: gradle buildNative. "
-                    + firstError.getMessage());
         }
+        return false;
     }
 
     private static boolean tryLoadFromBundledResources() {
@@ -146,6 +159,7 @@ public final class FortressFinderBridge {
             int crossFilter,
             int minLong,
             int minShort,
+            int minHeight,
             int numThreads);
 
     /** @return [current, total, phase1, status] or null */

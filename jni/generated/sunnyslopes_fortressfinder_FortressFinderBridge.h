@@ -42,14 +42,14 @@ extern "C" {
 #undef sunnyslopes_fortressfinder_FortressFinderBridge_CROSS_STRIDE
 #define sunnyslopes_fortressfinder_FortressFinderBridge_CROSS_STRIDE 6L
 #undef sunnyslopes_fortressfinder_FortressFinderBridge_SPAN_STRIDE
-#define sunnyslopes_fortressfinder_FortressFinderBridge_SPAN_STRIDE 7L
+#define sunnyslopes_fortressfinder_FortressFinderBridge_SPAN_STRIDE 8L
 /*
  * Class:     sunnyslopes_fortressfinder_FortressFinderBridge
  * Method:    fortressSearch
- * Signature: (IJIIIIIIII)[I
+ * Signature: (IJIIIIIIIII)[I
  */
 JNIEXPORT jintArray JNICALL Java_sunnyslopes_fortressfinder_FortressFinderBridge_fortressSearch
-  (JNIEnv *, jclass, jint, jlong, jint, jint, jint, jint, jint, jint, jint, jint);
+  (JNIEnv *, jclass, jint, jlong, jint, jint, jint, jint, jint, jint, jint, jint, jint);
 
 /*
  * Class:     sunnyslopes_fortressfinder_FortressFinderBridge

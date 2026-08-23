@@ -7,7 +7,7 @@ plugins {
     id 'com.github.johnrengelman.shadow' version '8.1.1'
 }
 group 'sunnyslopes.fortressfinder'
-version '1.0.3'
+version '1.0.4'
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
@@ -206,6 +206,8 @@ tasks.register('prepareNativeResources') {
     dependsOn tasks.named('buildNative')
     group = 'build'
     description = 'Collects dll/so/dylib into jar resources'
+    inputs.files(fileTree(dir: 'build/native', include: ['**/*.dll', '**/*.so', '**/*.dylib'])).optional()
+    inputs.files(fileTree(dir: 'native', include: ['**/*.dll', '**/*.so', '**/*.dylib'])).optional()
     outputs.dir(generatedNativeResourcesDir)
     doLast {
         def outDir = generatedNativeResourcesDir.get().asFile

@@ -29,6 +29,7 @@ public class FortressSearchRunner {
             int crossFilter,
             int minLong,
             int minShort,
+            int minHeight,
             int threadCount) {
     }
 
@@ -88,9 +89,19 @@ public class FortressSearchRunner {
         if (raw == null || raw.length == 0) {
             return "";
         }
-        int stride = mode == FortressFinderBridge.MODE_SPAN
-                ? FortressFinderBridge.SPAN_STRIDE
-                : FortressFinderBridge.CROSS_STRIDE;
+        int stride;
+        if (mode == FortressFinderBridge.MODE_SPAN) {
+            // Prefer 8-int records (spanX*spanY*spanZ); fall back to legacy 7-int (long*short).
+            if (raw.length % FortressFinderBridge.SPAN_STRIDE == 0) {
+                stride = FortressFinderBridge.SPAN_STRIDE;
+            } else if (raw.length % 7 == 0) {
+                stride = 7;
+            } else {
+                stride = FortressFinderBridge.SPAN_STRIDE;
+            }
+        } else {
+            stride = FortressFinderBridge.CROSS_STRIDE;
+        }
         record ResultLine(int x, int z, String text) {}
         List<ResultLine> lines = new ArrayList<>();
         for (int i = 0; i + stride <= raw.length; i += stride) {
@@ -99,9 +110,16 @@ public class FortressSearchRunner {
             int outZ = raw[i + 4];
             String text;
             if (mode == FortressFinderBridge.MODE_SPAN) {
-                int longEdge = raw[i + 5];
-                int shortEdge = raw[i + 6];
-                text = String.format("/tp %d %d %d %d*%d", outX, outY, outZ, longEdge, shortEdge);
+                if (stride == FortressFinderBridge.SPAN_STRIDE) {
+                    int spanX = raw[i + 5];
+                    int spanY = raw[i + 6];
+                    int spanZ = raw[i + 7];
+                    text = String.format("/tp %d %d %d %d*%d*%d", outX, outY, outZ, spanX, spanY, spanZ);
+                } else {
+                    int longEdge = raw[i + 5];
+                    int shortEdge = raw[i + 6];
+                    text = String.format("/tp %d %d %d %d*%d", outX, outY, outZ, longEdge, shortEdge);
+                }
             } else {
                 int shapeCode = raw[i + 5];
                 int n = shapeCode == FortressFinderBridge.SHAPE_QUAD ? 4
@@ -307,6 +325,7 @@ public class FortressSearchRunner {
                     params.crossFilter(),
                     params.minLong(),
                     minShort,
+                    params.minHeight(),
                     threads);
 
             if (raw != null && resultCallback != null) {

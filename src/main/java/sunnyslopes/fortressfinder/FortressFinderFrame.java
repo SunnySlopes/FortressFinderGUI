@@ -50,6 +50,10 @@ public class FortressFinderFrame extends JFrame {
     private static final int DEFAULT_SPAN_EDGE = 240;
     private static final int SPAN_EDGE_MIN = 0;
     private static final int SPAN_EDGE_MAX = 260;
+    /** Default / clamp for spanY (maxY−minY). */
+    private static final int DEFAULT_SPAN_HEIGHT = 16;
+    private static final int SPAN_HEIGHT_MIN = 16;
+    private static final int SPAN_HEIGHT_MAX = 40;
     private static final int DEFAULT_SQUARE_SIDE = DEFAULT_MAX_X - DEFAULT_MIN_X + 1;
     private static final int DEFAULT_LIST_SQUARE_SIDE = DEFAULT_LIST_MAX_X - DEFAULT_LIST_MIN_X + 1;
     /** Newest → oldest; "1.21" uses MC_1_21_1 under the hood. */
@@ -75,6 +79,7 @@ public class FortressFinderFrame extends JFrame {
     private JLabel searchCrossFilterLabel;
     private JLabel searchMinLongLabel;
     private JLabel searchMinShortLabel;
+    private JLabel searchMinHeightLabel;
     private JLabel searchMcVersionLabel;
     private JLabel searchMinXLabel;
     private JLabel searchMaxXLabel;
@@ -87,6 +92,7 @@ public class FortressFinderFrame extends JFrame {
     private JComboBox<String> searchCrossFilterCombo;
     private JTextField searchMinLongField;
     private JTextField searchMinShortField;
+    private JTextField searchMinHeightField;
     private JComboBox<String> searchMcVersionCombo;
     private JTextField minXField;
     private JTextField maxXField;
@@ -123,6 +129,7 @@ public class FortressFinderFrame extends JFrame {
     private int lastSearchCrossFilter = FortressFinderBridge.CROSS_FILTER_ALL;
     private int lastSearchMinLong = DEFAULT_SPAN_EDGE;
     private int lastSearchMinShort = DEFAULT_SPAN_EDGE;
+    private int lastSearchMinHeight = DEFAULT_SPAN_HEIGHT;
     private int lastSearchThreadCount = 0;
     /**
      * Monotonic token: increment before clearing single-seed results, again on stop/done so any
@@ -140,6 +147,7 @@ public class FortressFinderFrame extends JFrame {
     private JLabel listSearchCrossFilterLabel;
     private JLabel listSearchMinLongLabel;
     private JLabel listSearchMinShortLabel;
+    private JLabel listSearchMinHeightLabel;
     private JLabel listSearchMcVersionLabel;
     private JLabel listSearchMinXLabel;
     private JLabel listSearchMaxXLabel;
@@ -151,6 +159,7 @@ public class FortressFinderFrame extends JFrame {
     private JComboBox<String> listCrossFilterCombo;
     private JTextField listMinLongField;
     private JTextField listMinShortField;
+    private JTextField listMinHeightField;
     private JComboBox<String> listMcVersionCombo;
     private JTextField listMinXField;
     private JTextField listMaxXField;
@@ -188,6 +197,7 @@ public class FortressFinderFrame extends JFrame {
     private int lastListSearchCrossFilter = FortressFinderBridge.CROSS_FILTER_ALL;
     private int lastListSearchMinLong = DEFAULT_SPAN_EDGE;
     private int lastListSearchMinShort = DEFAULT_SPAN_EDGE;
+    private int lastListSearchMinHeight = DEFAULT_SPAN_HEIGHT;
     private int lastListSearchThreadCount = 0;
     // 存储每个种子的结果
     private final Map<Long, List<String>> seedResults = new ConcurrentHashMap<>();
@@ -357,17 +367,27 @@ public class FortressFinderFrame extends JFrame {
         });
         addLabelFieldRow(inputPanel, gbc, row++, searchMinShortLabel, searchMinShortField);
 
+        searchMinHeightLabel = new JLabel(getString("label.minHeight"));
+        searchMinHeightLabel.setFont(getLoadedFont());
+        searchMinHeightField = new JTextField(String.valueOf(DEFAULT_SPAN_HEIGHT), 20);
+        searchMinHeightField.addFocusListener(new java.awt.event.FocusAdapter() {
+            public void focusLost(java.awt.event.FocusEvent e) {
+                clampSpanHeightField(searchMinHeightField);
+            }
+        });
+        addLabelFieldRow(inputPanel, gbc, row++, searchMinHeightLabel, searchMinHeightField);
+
         searchMcVersionLabel = new JLabel(getString("label.mcVersion"));
         searchMcVersionLabel.setFont(getLoadedFont());
         addLabelFieldRow(inputPanel, gbc, row++, searchMcVersionLabel, searchMcVersionCombo = createMcVersionCombo());
         searchModeCombo.addActionListener(e -> {
             if (searchModeCombo.isEnabled()) {
                 applyModeDependentControls(searchModeCombo, searchCrossFilterCombo,
-                        searchMinLongField, searchMinShortField, true);
+                        searchMinLongField, searchMinShortField, searchMinHeightField, true);
             }
         });
         applyModeDependentControls(searchModeCombo, searchCrossFilterCombo,
-                searchMinLongField, searchMinShortField, true);
+                searchMinLongField, searchMinShortField, searchMinHeightField, true);
 
         // MinX 输入
         gbc.gridx = 0;
@@ -680,11 +700,13 @@ public class FortressFinderFrame extends JFrame {
             int crossFilter = getCrossFilterFromCombo(searchCrossFilterCombo);
             int minLong = parseSpanEdge(searchMinLongField);
             int minShort = parseSpanEdge(searchMinShortField);
+            int minHeight = parseSpanHeight(searchMinHeightField);
 
             if (seed != lastSearchSeed || minX != lastSearchMinX ||
                     maxX != lastSearchMaxX || minZ != lastSearchMinZ || maxZ != lastSearchMaxZ ||
                     mode != lastSearchMode || mc != lastSearchMc || crossFilter != lastSearchCrossFilter ||
-                    minLong != lastSearchMinLong || minShort != lastSearchMinShort) {
+                    minLong != lastSearchMinLong || minShort != lastSearchMinShort
+                    || minHeight != lastSearchMinHeight) {
                 if (fortressRunner != null) {
                     fortressRunner.stop();
                 }
@@ -851,10 +873,37 @@ public class FortressFinderFrame extends JFrame {
         }
     }
 
+    private void clampSpanHeightField(JTextField field) {
+        if (field == null) return;
+        try {
+            int v = Integer.parseInt(field.getText().trim());
+            if (v < SPAN_HEIGHT_MIN) {
+                JOptionPane.showMessageDialog(this, getString("error.spanHeightOutOfRange"), getString("prompt.error"),
+                        JOptionPane.ERROR_MESSAGE);
+                field.setText(String.valueOf(SPAN_HEIGHT_MIN));
+            } else if (v > SPAN_HEIGHT_MAX) {
+                JOptionPane.showMessageDialog(this, getString("error.spanHeightOutOfRange"), getString("prompt.error"),
+                        JOptionPane.ERROR_MESSAGE);
+                field.setText(String.valueOf(SPAN_HEIGHT_MAX));
+            }
+        } catch (NumberFormatException e) {
+            field.setText(String.valueOf(DEFAULT_SPAN_HEIGHT));
+        }
+    }
+
+    private int parseSpanHeight(JTextField field) {
+        clampSpanHeightField(field);
+        try {
+            return Integer.parseInt(field.getText().trim());
+        } catch (NumberFormatException e) {
+            return DEFAULT_SPAN_HEIGHT;
+        }
+    }
+
     private FortressSearchRunner.FortressSearchParams buildSearchParams(
             long seed, int minX, int maxX, int minZ, int maxZ,
             JComboBox<String> modeCombo, JComboBox<String> crossCombo,
-            JTextField minLongField, JTextField minShortField,
+            JTextField minLongField, JTextField minShortField, JTextField minHeightField,
             JComboBox<String> mcCombo, int threadCount) {
         return new FortressSearchRunner.FortressSearchParams(
                 getModeFromCombo(modeCombo),
@@ -867,24 +916,29 @@ public class FortressFinderFrame extends JFrame {
                 getCrossFilterFromCombo(crossCombo),
                 parseSpanEdge(minLongField),
                 parseSpanEdge(minShortField),
+                parseSpanHeight(minHeightField),
                 threadCount);
     }
 
     private void applyModeDependentControls(JComboBox<String> modeCombo, JComboBox<String> crossCombo,
-            JTextField minLongField, JTextField minShortField, boolean parentEnabled) {
-        if (modeCombo == null || crossCombo == null || minLongField == null || minShortField == null) {
+            JTextField minLongField, JTextField minShortField, JTextField minHeightField,
+            boolean parentEnabled) {
+        if (modeCombo == null || crossCombo == null || minLongField == null || minShortField == null
+                || minHeightField == null) {
             return;
         }
         if (!parentEnabled) {
             crossCombo.setEnabled(false);
             minLongField.setEnabled(false);
             minShortField.setEnabled(false);
+            minHeightField.setEnabled(false);
             return;
         }
         boolean spanMode = getModeFromCombo(modeCombo) == FortressFinderBridge.MODE_SPAN;
         crossCombo.setEnabled(!spanMode);
         minLongField.setEnabled(spanMode);
         minShortField.setEnabled(spanMode);
+        minHeightField.setEnabled(spanMode);
     }
 
     private void ensureMinLongAtLeastMinShort(JTextField minLongField, JTextField minShortField) {
@@ -899,7 +953,7 @@ public class FortressFinderFrame extends JFrame {
         if (searchModeCombo != null) searchModeCombo.setEnabled(enabled);
         if (searchMcVersionCombo != null) searchMcVersionCombo.setEnabled(enabled);
         applyModeDependentControls(searchModeCombo, searchCrossFilterCombo,
-                searchMinLongField, searchMinShortField, enabled);
+                searchMinLongField, searchMinShortField, searchMinHeightField, enabled);
         setBoundaryButtonsEnabled(searchBoundaryButtons, enabled);
     }
 
@@ -907,7 +961,7 @@ public class FortressFinderFrame extends JFrame {
         if (listSearchModeCombo != null) listSearchModeCombo.setEnabled(enabled);
         if (listMcVersionCombo != null) listMcVersionCombo.setEnabled(enabled);
         applyModeDependentControls(listSearchModeCombo, listCrossFilterCombo,
-                listMinLongField, listMinShortField, enabled);
+                listMinLongField, listMinShortField, listMinHeightField, enabled);
         setBoundaryButtonsEnabled(listBoundaryButtons, enabled);
     }
 
@@ -1098,7 +1152,7 @@ public class FortressFinderFrame extends JFrame {
     }
 
     /**
-     * Parse sort score: N from NCrossings, or long*short from span line.
+     * Parse sort score: N from NCrossings, or spanX*spanY*spanZ from span line.
      */
     private long parseScoreFromResultLine(String line) {
         if (line == null || !line.startsWith("/tp ")) return -1;
@@ -1112,14 +1166,20 @@ public class FortressFinderFrame extends JFrame {
                 return -1;
             }
         }
-        int star = line.indexOf('*');
-        if (star > 0) {
+        int star1 = line.indexOf('*');
+        if (star1 > 0) {
             try {
-                int space = line.lastIndexOf(' ', star - 1);
+                int space = line.lastIndexOf(' ', star1 - 1);
                 if (space < 0) return -1;
-                long a = Long.parseLong(line.substring(space + 1, star).trim());
-                long b = Long.parseLong(line.substring(star + 1).trim());
-                return a * b;
+                int star2 = line.indexOf('*', star1 + 1);
+                long a = Long.parseLong(line.substring(space + 1, star1).trim());
+                if (star2 < 0) {
+                    long b = Long.parseLong(line.substring(star1 + 1).trim());
+                    return a * b;
+                }
+                long b = Long.parseLong(line.substring(star1 + 1, star2).trim());
+                long c = Long.parseLong(line.substring(star2 + 1).trim());
+                return a * b * c;
             } catch (NumberFormatException e) {
                 return -1;
             }
@@ -1253,6 +1313,7 @@ public class FortressFinderFrame extends JFrame {
 
             clampSpanEdgeField(searchMinLongField);
             clampSpanEdgeField(searchMinShortField);
+            clampSpanHeightField(searchMinHeightField);
             if (getModeFromCombo(searchModeCombo) == FortressFinderBridge.MODE_SPAN) {
                 ensureMinLongAtLeastMinShort(searchMinLongField, searchMinShortField);
             }
@@ -1381,6 +1442,7 @@ public class FortressFinderFrame extends JFrame {
             lastSearchCrossFilter = getCrossFilterFromCombo(searchCrossFilterCombo);
             lastSearchMinLong = parseSpanEdge(searchMinLongField);
             lastSearchMinShort = parseSpanEdge(searchMinShortField);
+            lastSearchMinHeight = parseSpanHeight(searchMinHeightField);
             lastSearchThreadCount = threadCount;
 
             isSearchRunning = true;
@@ -1409,7 +1471,7 @@ public class FortressFinderFrame extends JFrame {
             FortressSearchRunner.FortressSearchParams params = buildSearchParams(
                     seed, minX, maxX, minZ, maxZ,
                     searchModeCombo, searchCrossFilterCombo,
-                    searchMinLongField, searchMinShortField,
+                    searchMinLongField, searchMinShortField, searchMinHeightField,
                     searchMcVersionCombo, threadCount);
             fortressRunner.startFortressSearch(params,
                     info -> updateFortressSearchProgress(resultToken, info),
@@ -1533,17 +1595,27 @@ public class FortressFinderFrame extends JFrame {
         });
         addLabelFieldRow(inputPanel, gbc, listRow++, listSearchMinShortLabel, listMinShortField);
 
+        listSearchMinHeightLabel = new JLabel(getString("label.minHeight"));
+        listSearchMinHeightLabel.setFont(getLoadedFont());
+        listMinHeightField = new JTextField(String.valueOf(DEFAULT_SPAN_HEIGHT), 20);
+        listMinHeightField.addFocusListener(new java.awt.event.FocusAdapter() {
+            public void focusLost(java.awt.event.FocusEvent e) {
+                clampSpanHeightField(listMinHeightField);
+            }
+        });
+        addLabelFieldRow(inputPanel, gbc, listRow++, listSearchMinHeightLabel, listMinHeightField);
+
         listSearchMcVersionLabel = new JLabel(getString("label.mcVersion"));
         listSearchMcVersionLabel.setFont(getLoadedFont());
         addLabelFieldRow(inputPanel, gbc, listRow++, listSearchMcVersionLabel, listMcVersionCombo = createMcVersionCombo());
         listSearchModeCombo.addActionListener(e -> {
             if (listSearchModeCombo.isEnabled()) {
                 applyModeDependentControls(listSearchModeCombo, listCrossFilterCombo,
-                        listMinLongField, listMinShortField, true);
+                        listMinLongField, listMinShortField, listMinHeightField, true);
             }
         });
         applyModeDependentControls(listSearchModeCombo, listCrossFilterCombo,
-                listMinLongField, listMinShortField, true);
+                listMinLongField, listMinShortField, listMinHeightField, true);
 
         // MinX 输入
         gbc.gridx = 0;
@@ -2098,6 +2170,7 @@ public class FortressFinderFrame extends JFrame {
         if (searchCrossFilterLabel != null) searchCrossFilterLabel.setText(getString("label.crossFilter"));
         if (searchMinLongLabel != null) searchMinLongLabel.setText(getString("label.minLong"));
         if (searchMinShortLabel != null) searchMinShortLabel.setText(getString("label.minShort"));
+        if (searchMinHeightLabel != null) searchMinHeightLabel.setText(getString("label.minHeight"));
         if (searchMcVersionLabel != null) searchMcVersionLabel.setText(getString("label.mcVersion"));
         refreshComboItems(searchModeCombo, new String[]{getString("mode.span"), getString("mode.cross")});
         refreshComboItems(searchCrossFilterCombo, new String[]{
@@ -2105,7 +2178,7 @@ public class FortressFinderFrame extends JFrame {
         });
         refreshComboItems(searchMcVersionCombo, mcVersionLabels());
         applyModeDependentControls(searchModeCombo, searchCrossFilterCombo,
-                searchMinLongField, searchMinShortField,
+                searchMinLongField, searchMinShortField, searchMinHeightField,
                 searchModeCombo != null && searchModeCombo.isEnabled());
         if (searchMinXLabel != null) {
             searchMinXLabel.setText(getString("label.minX"));
@@ -2200,6 +2273,7 @@ public class FortressFinderFrame extends JFrame {
         if (listSearchCrossFilterLabel != null) listSearchCrossFilterLabel.setText(getString("label.crossFilter"));
         if (listSearchMinLongLabel != null) listSearchMinLongLabel.setText(getString("label.minLong"));
         if (listSearchMinShortLabel != null) listSearchMinShortLabel.setText(getString("label.minShort"));
+        if (listSearchMinHeightLabel != null) listSearchMinHeightLabel.setText(getString("label.minHeight"));
         if (listSearchMcVersionLabel != null) listSearchMcVersionLabel.setText(getString("label.mcVersion"));
         refreshComboItems(listSearchModeCombo, new String[]{getString("mode.span"), getString("mode.cross")});
         refreshComboItems(listCrossFilterCombo, new String[]{
@@ -2207,7 +2281,7 @@ public class FortressFinderFrame extends JFrame {
         });
         refreshComboItems(listMcVersionCombo, mcVersionLabels());
         applyModeDependentControls(listSearchModeCombo, listCrossFilterCombo,
-                listMinLongField, listMinShortField,
+                listMinLongField, listMinShortField, listMinHeightField,
                 listSearchModeCombo != null && listSearchModeCombo.isEnabled());
 
         // 更新按钮文本
@@ -2277,6 +2351,7 @@ public class FortressFinderFrame extends JFrame {
     private void addListSearchParameterListeners() {
         addDocumentChangeListener(listMinLongField.getDocument(), this::checkListSearchParameterChange);
         addDocumentChangeListener(listMinShortField.getDocument(), this::checkListSearchParameterChange);
+        addDocumentChangeListener(listMinHeightField.getDocument(), this::checkListSearchParameterChange);
         if (listSearchModeCombo != null) {
             listSearchModeCombo.addActionListener(e -> checkListSearchParameterChange());
         }
@@ -2363,10 +2438,12 @@ public class FortressFinderFrame extends JFrame {
             int crossFilter = getCrossFilterFromCombo(listCrossFilterCombo);
             int minLong = parseSpanEdge(listMinLongField);
             int minShort = parseSpanEdge(listMinShortField);
+            int minHeight = parseSpanHeight(listMinHeightField);
 
             if (minX != lastListSearchMinX || maxX != lastListSearchMaxX || minZ != lastListSearchMinZ || maxZ != lastListSearchMaxZ
                     || mode != lastListSearchMode || mc != lastListSearchMc || crossFilter != lastListSearchCrossFilter
-                    || minLong != lastListSearchMinLong || minShort != lastListSearchMinShort) {
+                    || minLong != lastListSearchMinLong || minShort != lastListSearchMinShort
+                    || minHeight != lastListSearchMinHeight) {
                 if (listFortressRunner != null) listFortressRunner.stop();
                 isListSearchRunning = false;
                 isListSearchPaused = false;
@@ -2505,6 +2582,7 @@ public class FortressFinderFrame extends JFrame {
 
             clampSpanEdgeField(listMinLongField);
             clampSpanEdgeField(listMinShortField);
+            clampSpanHeightField(listMinHeightField);
             if (getModeFromCombo(listSearchModeCombo) == FortressFinderBridge.MODE_SPAN) {
                 ensureMinLongAtLeastMinShort(listMinLongField, listMinShortField);
             }
@@ -2616,6 +2694,7 @@ public class FortressFinderFrame extends JFrame {
             lastListSearchCrossFilter = getCrossFilterFromCombo(listCrossFilterCombo);
             lastListSearchMinLong = parseSpanEdge(listMinLongField);
             lastListSearchMinShort = parseSpanEdge(listMinShortField);
+            lastListSearchMinHeight = parseSpanHeight(listMinHeightField);
             lastListSearchThreadCount = threadCount;
 
             isListSearchRunning = true;
@@ -2645,7 +2724,7 @@ public class FortressFinderFrame extends JFrame {
             final FortressSearchRunner.FortressSearchParams listParams = buildSearchParams(
                     0, minX, maxX, minZ, maxZ,
                     listSearchModeCombo, listCrossFilterCombo,
-                    listMinLongField, listMinShortField,
+                    listMinLongField, listMinShortField, listMinHeightField,
                     listMcVersionCombo, threadCount);
             // Multi-seed: parallelize across seeds; each seed always uses 1 native thread.
             final int seedParallelism = Math.max(1, threadCount);
@@ -2736,7 +2815,8 @@ public class FortressFinderFrame extends JFrame {
                                     new FortressSearchRunner.FortressSearchParams(
                                             listParams.mode(), seed, minX, maxX, minZ, maxZ,
                                             listParams.mc(), listParams.crossFilter(),
-                                            listParams.minLong(), listParams.minShort(), 1);
+                                            listParams.minLong(), listParams.minShort(),
+                                            listParams.minHeight(), 1);
                             try {
                                 boolean seedFinished = runListSeedSearch(
                                         runner, seedParams, seedResultCallback, seed);

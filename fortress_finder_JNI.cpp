@@ -54,8 +54,9 @@ struct FortressHit {
     int outZ = 0;
     int mode = 0;
     int shapeCode = 0;
-    int longEdge = 0;
-    int shortEdge = 0;
+    int longEdge = 0;   // span mode: spanX
+    int shortEdge = 0;  // span mode: spanZ
+    int heightEdge = 0; // span mode: spanY (maxY - minY)
 
     bool operator<(const FortressHit &other) const noexcept
     {
@@ -75,6 +76,7 @@ struct SearchConfig {
     int crossFilter = 2;
     int minLong = 0;
     int minShort = 0;
+    int minHeight = 0;
 };
 
 namespace {
@@ -171,6 +173,7 @@ namespace {
         CrossFilter crossFilter = CrossFilter::All;
         int minLong = 0;
         int minShort = 0;
+        int minHeight = 0;
     };
 
     InternalConfig toInternal(const SearchConfig &cfg) {
@@ -187,6 +190,7 @@ namespace {
             ic.crossFilter = CrossFilter::All;
         ic.minLong = cfg.minLong;
         ic.minShort = cfg.minShort > 0 ? cfg.minShort : cfg.minLong;
+        ic.minHeight = cfg.minHeight;
         return ic;
     }
 
@@ -538,10 +542,13 @@ namespace {
 
             if (cfg.mode == Mode::Span) {
                 const int spanX = fd.maxX - fd.minX;
+                const int spanY = fd.maxY - fd.minY;
                 const int spanZ = fd.maxZ - fd.minZ;
                 const int longEdge = std::max(spanX, spanZ);
                 const int shortEdge = std::min(spanX, spanZ);
                 if (longEdge < cfg.minLong || shortEdge < cfg.minShort)
+                    continue;
+                if (spanY < cfg.minHeight)
                     continue;
                 if (!cfg.area.inInit(fd.centerX, fd.centerZ))
                     continue;
@@ -556,8 +563,9 @@ namespace {
                 hit.outZ = fd.centerZ;
                 hit.mode = 1;
                 hit.shapeCode = 0;
-                hit.longEdge = longEdge;
-                hit.shortEdge = shortEdge;
+                hit.longEdge = spanX;
+                hit.heightEdge = spanY;
+                hit.shortEdge = spanZ;
                 out.addResult(hit);
                 continue;
             }
