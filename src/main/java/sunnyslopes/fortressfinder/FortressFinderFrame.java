@@ -33,6 +33,8 @@ public class FortressFinderFrame extends JFrame {
     private static final int BOUNDARY_MAX_X = 3750000;
     private static final int BOUNDARY_MIN_Z = -3750000;
     private static final int BOUNDARY_MAX_Z = 3750000;
+    /** Square side matching overworld border (min..max inclusive). */
+    private static final int BOUNDARY_SQUARE_SIDE = BOUNDARY_MAX_X - BOUNDARY_MIN_X + 1;
     private static final int EX_BOUNDARY_MIN_X = -4000000;
     private static final int EX_BOUNDARY_MAX_X = 4000000;
     private static final int EX_BOUNDARY_MIN_Z = -4000000;
@@ -50,7 +52,7 @@ public class FortressFinderFrame extends JFrame {
     private static final int DEFAULT_SPAN_EDGE = 240;
     private static final int SPAN_EDGE_MIN = 0;
     private static final int SPAN_EDGE_MAX = 260;
-    /** Default / clamp for spanY (maxY−minY). */
+    /** Default / clamp for spanY (maxY−minY; height keeps legacy exclusive-diff). */
     private static final int DEFAULT_SPAN_HEIGHT = 16;
     private static final int SPAN_HEIGHT_MIN = 16;
     private static final int SPAN_HEIGHT_MAX = 40;
@@ -514,6 +516,8 @@ public class FortressFinderFrame extends JFrame {
         searchPauseButton.setEnabled(false);
         searchStopButton.setEnabled(false);
         searchBoundaryButtons = createBoundaryButtons(minXField, maxXField, minZField, maxZField,
+                () -> checkSquareAreaDefaults(searchSquareAreaCheck, searchSquareSideField,
+                        minXField, maxXField, minZField, maxZField, BOUNDARY_SQUARE_SIDE, true),
                 () -> uncheckSquareArea(searchSquareAreaCheck, searchSquareSideField,
                         minXField, maxXField, minZField, maxZField, true));
 
@@ -1093,6 +1097,7 @@ public class FortressFinderFrame extends JFrame {
 
     private BoundaryButtonRefs createBoundaryButtons(JTextField minXField, JTextField maxXField,
                                                      JTextField minZField, JTextField maxZField,
+                                                     Runnable onInnerBorderPreset,
                                                      Runnable onCornerBorderPreset) {
         JButton innerButton = new JButton(getString("button.setInnerBoundary"));
         JButton nwButton = new JButton(getString("button.nwBorderSearch"));
@@ -1101,9 +1106,13 @@ public class FortressFinderFrame extends JFrame {
         JButton seButton = new JButton(getString("button.seBorderSearch"));
 
         innerButton.addActionListener(e -> {
-            if (onCornerBorderPreset != null) onCornerBorderPreset.run();
-            setSearchCoordinates(minXField, maxXField, minZField, maxZField,
-                    BOUNDARY_MIN_X, BOUNDARY_MAX_X, BOUNDARY_MIN_Z, BOUNDARY_MAX_Z);
+            // Overworld border is a square; check square side and keep the same inclusive range.
+            if (onInnerBorderPreset != null) {
+                onInnerBorderPreset.run();
+            } else {
+                setSearchCoordinates(minXField, maxXField, minZField, maxZField,
+                        BOUNDARY_MIN_X, BOUNDARY_MAX_X, BOUNDARY_MIN_Z, BOUNDARY_MAX_Z);
+            }
         });
         nwButton.addActionListener(e -> {
             if (onCornerBorderPreset != null) onCornerBorderPreset.run();
@@ -1719,6 +1728,8 @@ public class FortressFinderFrame extends JFrame {
         listSearchPauseButton.setEnabled(false);
         listSearchStopButton.setEnabled(false);
         listBoundaryButtons = createBoundaryButtons(listMinXField, listMaxXField, listMinZField, listMaxZField,
+                () -> checkSquareAreaDefaults(listSquareAreaCheck, listSquareSideField,
+                        listMinXField, listMaxXField, listMinZField, listMaxZField, BOUNDARY_SQUARE_SIDE, true),
                 () -> uncheckSquareArea(listSquareAreaCheck, listSquareSideField,
                         listMinXField, listMaxXField, listMinZField, listMaxZField, true));
 

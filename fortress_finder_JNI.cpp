@@ -208,13 +208,18 @@ namespace {
 
     bool checkProgress(Progress *progress);
 
-    bool parseFortress(int mc, uint64_t seed, int chunkX, int chunkZ, FortressData &out, Progress *progress) {
+    bool parseFortress(int mc, uint64_t seed, int chunkX, int chunkZ, FortressData &out, Progress *progress,
+                       bool storePieces) {
         Piece pieces[PIECES_MAX];
         int n = getFortressPieces(pieces, PIECES_MAX, mc, seed, chunkX, chunkZ);
         if (n <= 0)
             return false;
 
         out = FortressData{};
+        if (storePieces) {
+            out.pieces.reserve((size_t) n);
+            out.crossings.reserve(8);
+        }
         bool first = true;
         for (int i = 0; i < n; i++) {
             if (progress && (i & 15) == 0 && !checkProgress(progress))
@@ -236,6 +241,9 @@ namespace {
                 out.minY = std::min(out.minY, p.bb0.y);
                 out.maxY = std::max(out.maxY, p.bb1.y);
             }
+            if (!storePieces)
+                continue;
+
             StoredPiece sp;
             sp.type = p.type;
             sp.x0 = p.bb0.x;
@@ -518,7 +526,8 @@ namespace {
         applySeed(&g, DIM_NETHER, cfg.seed);
 
         for (int regZ = regZ0; regZ <= regZ1; regZ++) {
-            if (!checkProgress(progress))
+            // Avoid checking pause/stop on every region when strips are huge (full overworld).
+            if ((regZ & 31) == 0 && !checkProgress(progress))
                 return;
             Pos pos;
             if (!getStructurePos(Fortress, cfg.mc, cfg.seed, regX, regZ, &pos))
@@ -532,7 +541,8 @@ namespace {
             const int chunkZ = pos.z >> 4;
 
             FortressData fd;
-            if (!parseFortress(cfg.mc, cfg.seed, chunkX, chunkZ, fd, progress))
+            const bool needPieces = cfg.mode != Mode::Span;
+            if (!parseFortress(cfg.mc, cfg.seed, chunkX, chunkZ, fd, progress, needPieces))
                 continue;
             if (!checkProgress(progress))
                 return;
@@ -541,9 +551,10 @@ namespace {
             fd.startZ = pos.z;
 
             if (cfg.mode == Mode::Span) {
-                const int spanX = fd.maxX - fd.minX;
+                // Bounding box corners are inclusive → actual length/width is (max - min + 1).
+                const int spanX = fd.maxX - fd.minX + 1;
                 const int spanY = fd.maxY - fd.minY;
-                const int spanZ = fd.maxZ - fd.minZ;
+                const int spanZ = fd.maxZ - fd.minZ + 1;
                 const int longEdge = std::max(spanX, spanZ);
                 const int shortEdge = std::min(spanX, spanZ);
                 if (longEdge < cfg.minLong || shortEdge < cfg.minShort)

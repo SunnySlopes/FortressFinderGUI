@@ -10,68 +10,51 @@
 #include <functional>
 #include <condition_variable>
 #include <atomic>
-#include <iostream>
+#include <vector>
+#include <algorithm>
 
 template<typename T>
 class ThreadSafeResults {
-    std::priority_queue<T> results_;
+    std::vector<T> results_;
     mutable std::mutex mutex_{};
 
 public:
     void addResult(const T &res)
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        results_.emplace(res);
+        results_.push_back(res);
     }
 
     void addResults(const std::vector<T> &newResults)
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        for (const auto &result: newResults)
-        {
-            results_.emplace(result);
-        }
-    }
-
-    const T &get() const
-    {
-        return results_.top();
+        results_.insert(results_.end(), newResults.begin(), newResults.end());
     }
 
     bool empty() const
     {
+        std::lock_guard<std::mutex> lock(mutex_);
         return results_.empty();
     }
 
     void clear()
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        while (!results_.empty())
-            results_.pop();
+        results_.clear();
     }
 
     std::vector<T> peekAll() const
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        std::vector<T> copy;
-        std::priority_queue<T> temp = results_;
-        while (!temp.empty()) {
-            copy.push_back(temp.top());
-            temp.pop();
-        }
-        return copy;
+        return results_;
     }
 
     std::vector<T> getAllResults()
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        std::vector<T> allResults;
-        while (!results_.empty())
-        {
-            allResults.push_back(results_.top());
-            results_.pop();
-        }
-        std::cout << "addResults: " << allResults.size() << "\n";
+        std::vector<T> allResults = std::move(results_);
+        results_.clear();
+        std::sort(allResults.begin(), allResults.end());
         return allResults;
     }
 };
@@ -130,8 +113,6 @@ public:
                 worker.join();
             }
         }
-
-        std::cout << "ThreadPool destroyed" << std::endl;
     }
 };
 #endif //CUBIOMES_THREAD_H

@@ -1,6 +1,7 @@
 #include "generated/sunnyslopes_fortressfinder_FortressFinderBridge.h"
 
 #include <vector>
+#include <atomic>
 
 #define FORTRESS_FINDER_JNI
 #include "../fortress_finder_JNI.cpp"
@@ -8,6 +9,8 @@
 static Progress progress{};
 static ThreadSafeResults<FortressHit> globalResults{};
 static int g_lastSearchMode = 0;
+/** Points at the Progress currently being updated by an in-flight search (for UI polling). */
+static std::atomic<Progress *> g_active_progress{nullptr};
 
 static std::vector<jint> hitsToFlatInts(const std::vector<FortressHit> &hits, int mode) {
     std::vector<jint> flat;
@@ -73,13 +76,21 @@ JNIEXPORT jintArray JNICALL Java_sunnyslopes_fortressfinder_FortressFinderBridge
     localProgress.chunkInRunning = 0;
     localProgress.phase1 = 1;
 
+    // Publish for single-seed UI polling while workers update localProgress.
+    progress.current = 0;
+    progress.total = 1;
+    progress.chunkInRunning = 0;
+    progress.phase1 = 1;
+    g_active_progress.store(&localProgress, std::memory_order_release);
+
     runFortressSearch(cfg, &localProgress, localResults, numThreads);
 
-    // Mirror latest progress for single-seed UI polling (list mode ignores this).
+    // Mirror final counters, then clear active pointer before localProgress is destroyed.
     progress.current = localProgress.current.load();
     progress.total = localProgress.total.load();
     progress.chunkInRunning = localProgress.chunkInRunning.load();
     progress.phase1 = localProgress.phase1.load();
+    g_active_progress.store(nullptr, std::memory_order_release);
 
     if (g_search_stop.load() || localProgress.try_stop.load())
         return nullptr;
@@ -100,26 +111,29 @@ JNIEXPORT jintArray JNICALL Java_sunnyslopes_fortressfinder_FortressFinderBridge
 
 JNIEXPORT jintArray JNICALL Java_sunnyslopes_fortressfinder_FortressFinderBridge_getSearchProgress
   (JNIEnv *env, jclass) {
-    if (progress.total.load() == 0)
+    Progress *active = g_active_progress.load(std::memory_order_acquire);
+    Progress &p = active ? *active : progress;
+
+    if (p.total.load() == 0)
         return nullptr;
 
     int status = 0;
-    if (progress.phase1.load() == 1) {
-        if (progress.chunkInRunning.load() == 0)
+    if (p.phase1.load() == 1) {
+        if (p.chunkInRunning.load() == 0)
             status = 1;
         else
             status = 0;
-    } else if (progress.phase1.load() == 2) {
-        if (progress.current.load() >= progress.total.load())
+    } else if (p.phase1.load() == 2) {
+        if (p.current.load() >= p.total.load())
             status = 2;
         else
             status = 1;
     }
 
     jint data[4] = {
-        progress.current.load(),
-        progress.total.load(),
-        progress.phase1.load(),
+        p.current.load(),
+        p.total.load(),
+        p.phase1.load(),
         status,
     };
     jintArray arr = env->NewIntArray(4);
@@ -141,6 +155,8 @@ JNIEXPORT jboolean JNICALL Java_sunnyslopes_fortressfinder_FortressFinderBridge_
   (JNIEnv *, jclass) {
     fortressControlPause();
     progress.try_pause = true;
+    if (Progress *active = g_active_progress.load(std::memory_order_acquire))
+        active->try_pause = true;
     return JNI_TRUE;
 }
 
@@ -148,6 +164,8 @@ JNIEXPORT jboolean JNICALL Java_sunnyslopes_fortressfinder_FortressFinderBridge_
   (JNIEnv *, jclass) {
     fortressControlResume();
     progress.try_pause = false;
+    if (Progress *active = g_active_progress.load(std::memory_order_acquire))
+        active->try_pause = false;
     return JNI_TRUE;
 }
 
@@ -155,6 +173,8 @@ JNIEXPORT jboolean JNICALL Java_sunnyslopes_fortressfinder_FortressFinderBridge_
   (JNIEnv *, jclass) {
     fortressControlStop();
     progress.try_stop = true;
+    if (Progress *active = g_active_progress.load(std::memory_order_acquire))
+        active->try_stop = true;
     return JNI_TRUE;
 }
 
@@ -163,4 +183,8 @@ JNIEXPORT void JNICALL Java_sunnyslopes_fortressfinder_FortressFinderBridge_rese
     fortressControlReset();
     progress.try_pause = false;
     progress.try_stop = false;
+    if (Progress *active = g_active_progress.load(std::memory_order_acquire)) {
+        active->try_pause = false;
+        active->try_stop = false;
+    }
 }
