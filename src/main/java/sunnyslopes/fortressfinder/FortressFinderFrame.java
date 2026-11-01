@@ -58,19 +58,16 @@ public class FortressFinderFrame extends JFrame {
     private static final int SPAN_HEIGHT_MAX = 40;
     private static final int DEFAULT_SQUARE_SIDE = DEFAULT_MAX_X - DEFAULT_MIN_X + 1;
     private static final int DEFAULT_LIST_SQUARE_SIDE = DEFAULT_LIST_MAX_X - DEFAULT_LIST_MIN_X + 1;
-    /** Newest → oldest; "1.21" uses MC_1_21_1 under the hood. */
+    /**
+     * Newest → oldest. 1.18~26.3+ is one generation group searched with the
+     * 26.3 map; 1.16~1.17 is a separate group searched with the 1.17 map.
+     */
     private static final String[] MC_VERSION_LABEL_KEYS = {
-            "mc.26_2", "mc.26_1", "mc.1_21", "mc.1_20", "mc.1_19", "mc.1_18", "mc.1_17", "mc.1_16"
+            "mc.1_18_plus", "mc.1_16_1_17"
     };
     private static final int[] MC_VERSION_CODES = {
-            FortressFinderBridge.MC_26_2,
-            FortressFinderBridge.MC_26_1,
-            FortressFinderBridge.MC_1_21,
-            FortressFinderBridge.MC_1_20,
-            FortressFinderBridge.MC_1_19,
-            FortressFinderBridge.MC_1_18,
-            FortressFinderBridge.MC_1_17,
-            FortressFinderBridge.MC_1_16
+            FortressFinderBridge.MC_26_3,
+            FortressFinderBridge.MC_1_17
     };
     private static final int DEFAULT_MC_INDEX = 0;
 
@@ -127,7 +124,7 @@ public class FortressFinderFrame extends JFrame {
     private int lastSearchMinZ = 0;
     private int lastSearchMaxZ = 0;
     private int lastSearchMode = FortressFinderBridge.MODE_SPAN;
-    private int lastSearchMc = FortressFinderBridge.MC_26_2;
+    private int lastSearchMc = FortressFinderBridge.MC_26_3;
     private int lastSearchCrossFilter = FortressFinderBridge.CROSS_FILTER_ALL;
     private int lastSearchMinLong = DEFAULT_SPAN_EDGE;
     private int lastSearchMinShort = DEFAULT_SPAN_EDGE;
@@ -195,7 +192,7 @@ public class FortressFinderFrame extends JFrame {
     private int lastListSearchMinZ = 0;
     private int lastListSearchMaxZ = 0;
     private int lastListSearchMode = FortressFinderBridge.MODE_SPAN;
-    private int lastListSearchMc = FortressFinderBridge.MC_26_2;
+    private int lastListSearchMc = FortressFinderBridge.MC_26_3;
     private int lastListSearchCrossFilter = FortressFinderBridge.CROSS_FILTER_ALL;
     private int lastListSearchMinLong = DEFAULT_SPAN_EDGE;
     private int lastListSearchMinShort = DEFAULT_SPAN_EDGE;

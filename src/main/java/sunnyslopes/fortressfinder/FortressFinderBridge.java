@@ -32,16 +32,22 @@ public final class FortressFinderBridge {
 
     private static boolean loaded = false;
 
-    /** cubiomes MCVersion enum values (xpple biomes.h) */
+    /**
+     * cubiomes MCVersion enum values (xpple biomes.h).
+     *
+     * <p>The GUI exposes two generation groups: 1.16~1.17 searches with
+     * {@link #MC_1_17}, and 1.18~26.3+ searches with {@link #MC_26_3}.
+     */
     public static final int MC_1_16 = 20;
     public static final int MC_1_17 = 21;
     public static final int MC_1_18 = 22;
     public static final int MC_1_19 = 24;
     public static final int MC_1_20 = 25;
-    /** UI label "1.21" maps to cubiomes MC_1_21_1 */
     public static final int MC_1_21 = 26;
     public static final int MC_26_1 = 33;
     public static final int MC_26_2 = 34;
+    /** 1.18 ~ 26.3+ share one fortress generation; this is the group's map. */
+    public static final int MC_26_3 = 35;
 
     static {
         loadNativeLibrary();

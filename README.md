@@ -1,8 +1,18 @@
 # FortressFinder
 
-A GUI tool for searching Nether fortresses (crossings and large-span layouts) in **Minecraft Java Edition 1.18+**, powered by [cubiomes](https://github.com/xpple/cubiomes).
+A GUI tool for searching Nether fortresses (crossings and large-span layouts) in **Minecraft Java Edition 1.16 – 26.3+**, powered by [cubiomes](https://github.com/xpple/cubiomes).
 
-用于在 **Minecraft Java 版 1.18+** 中搜索下界要塞（十字路口 Cross / 大范围 Span）的 GUI 工具。
+用于在 **Minecraft Java 版 1.16 – 26.3+** 中搜索下界要塞（十字路口 Cross / 大范围 Span）的 GUI 工具。
+
+### Minecraft versions / 版本分组
+
+Fortress generation is identical within each group, so the GUI exposes two
+choices. `1.18~26.3+` searches with the **26.3** map, while the known-different
+`1.16~1.17` group searches with the **1.17** map.
+
+下界要塞生成在组内完全一致，因此 GUI 只提供两个选项：`1.18~26.3+`
+使用 **26.3** 的地图搜索；与 1.18+ 已知不同的 `1.16~1.17` 使用 **1.17**
+的地图搜索。
 
 ---
 
