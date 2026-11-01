@@ -11,7 +11,22 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * JNI bridge for fortress search (cubiomes).
+ * JNI bridge for fortress search.
+ *
+ * <p>All C++/cubiomes computation lives in the {@code FortressFinderBase}
+ * submodule (Gradle project {@code :fortressfinderbase}). This class is the
+ * Java side of the native contract:
+ * <ul>
+ *   <li>{@link #fortressSearch} returns 6 ints per hit in cross mode
+ *       ({@code chunkX, chunkZ, x, y, z, shapeCode}) and 8 ints per hit in
+ *       span mode ({@code chunkX, chunkZ, x, y, z, spanX, spanY, spanZ});</li>
+ *   <li>{@link #getSearchProgress} returns {@code [current, total, phase1, status]};</li>
+ *   <li>{@link #getNowResult} uses the same flat layout as {@link #fortressSearch}.</li>
+ * </ul>
+ * The native header checked into
+ * {@code FortressFinderBase/jni/generated/sunnyslopes_fortressfinder_FortressFinderBridge.h}
+ * must match this file; the main module's {@code verifyJniContract} task
+ * enforces that.
  */
 public final class FortressFinderBridge {
 
@@ -72,7 +87,8 @@ public final class FortressFinderBridge {
             return;
         }
         throw new UnsatisfiedLinkError(
-            "fortressFinderLibJ native library not found. Build with: gradle buildNative. "
+            "fortressFinderLibJ native library not found. Build with: gradlew buildNative "
+                + "(which delegates to :fortressfinderbase:copyNativeArtifacts). "
                 + (firstError != null ? firstError.getMessage() : ""));
     }
 
@@ -82,6 +98,10 @@ public final class FortressFinderBridge {
         Path[] candidates = {
             base.resolve("native"),
             base.resolve("build").resolve("native"),
+            // FortressFinderBase submodule build output.
+            base.resolve("FortressFinderBase").resolve("build").resolve("native"),
+            base.resolve("build").resolve("generated").resolve("native-resources")
+                .resolve("native").resolve(getOsResourceFolder() != null ? getOsResourceFolder() : "windows"),
             base.resolve("build"),
         };
         for (Path dir : candidates) {
@@ -143,8 +163,10 @@ public final class FortressFinderBridge {
             names.add("libfortressFinderLibJ.dll");
         } else if (os.contains("mac")) {
             names.add("libfortressFinderLibJ.dylib");
+            names.add("fortressFinderLibJ.dylib");
         } else {
             names.add("libfortressFinderLibJ.so");
+            names.add("fortressFinderLibJ.so");
         }
         return names;
     }
